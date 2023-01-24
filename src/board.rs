@@ -1,17 +1,56 @@
-use std::fmt::Debug;
+use std::{
+    cmp::{max, min},
+    fmt::Debug,
+};
 
 use regex::Regex;
 
-use crate::fen::{Fen, parse_fen};
+use crate::fen::{parse_fen, Fen};
 
 pub struct Board {
     pub squares: [u32; 128],
     pub whiteToMove: bool,
-    pub castling: [bool; 4],
+    pub castling: CastlingRights,
     pub epSquare: Square,
     pub halfmoveClock: u32,
     pub fullmoveNumber: u32,
-    undo_stack: Vec<MoveUndo>
+    undo_stack: Vec<MoveUndo>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CastlingRights {
+    pub flags: u32, // KQkq
+}
+
+impl CastlingRights {
+    pub fn new() -> CastlingRights {
+        CastlingRights { flags: 0 }
+    }
+
+    pub fn remove(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let mask = Self::mask(colour, side);
+        self.flags = self.flags & !(mask);
+    }
+
+    pub fn allowed(&self, colour: Colour, side: BoardSide) -> bool {
+        let mask = Self::mask(colour, Some(side));
+        self.flags & mask != 0
+    }
+
+    pub fn allow(&mut self, colour: Colour, side: BoardSide) {
+        let mask = Self::mask(colour, Some(side));
+        self.flags |= mask;
+    }
+
+    #[inline]
+    fn mask(colour: Colour, side: Option<BoardSide>) -> u32 {
+        let colour_shift = 2 * (1 - colour);
+        let mask = match side {
+            None => 0b11,
+            Some(castling_side) => 1 << castling_side as u32,
+        };
+        mask << colour_shift
+    }
 }
 
 /// The type of a piece, without colour, e.g. knight, bishop etc.
@@ -23,8 +62,37 @@ pub type Colour = u32;
 /// A piece with colour, e.g. a black knight.
 pub type Piece = u32;
 
-pub const BLACK: Colour = 16;
-pub const WHITE: Colour = 32;
+#[derive(PartialEq)]
+pub enum File {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    H,
+}
+
+#[derive(PartialEq)]
+pub enum Rank {
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+}
+
+pub enum BoardSide {
+    Queenside,
+    Kingside,
+}
+
+// Colours.
+pub const WHITE: Colour = 0;
+pub const BLACK: Colour = 1;
 
 const EMPTY: PieceType = 0;
 const PAWN: PieceType = 1;
@@ -34,20 +102,38 @@ const BISHOP: PieceType = 4;
 const QUEEN: PieceType = 5;
 const KING: PieceType = 6;
 
+// Bit to be set for black pieces;
+const BLACK_BIT: u32 = 1 << 5;
+
+const H_ROOK_HOME_SQUARES: [usize; 2] = [0x07, 0x77];
+const A_ROOK_HOME_SQUARES: [usize; 2] = [0x00, 0x70];
+const KING_HOME_SQUARES: [usize; 2] = [0x04, 0x74];
+
 const STARTPOS_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+#[inline]
 pub fn get_piece(piece_type: PieceType, colour: Colour) -> Piece {
-    piece_type | colour
+    piece_type | (colour << 5)
+}
+
+#[inline]
+pub fn piece_type(piece: Piece) -> PieceType {
+    piece & 0xF
 }
 
 pub fn piece_colour(piece: Piece) -> Option<Colour> {
-    if piece & BLACK != 0 {
-        Some(BLACK)
-    } else if piece & WHITE != 0 {
-        Some(WHITE)
-    } else {
+    if piece == EMPTY {
         None
+    } else if (piece & BLACK_BIT) != 0 {
+        Some(BLACK)
+    } else {
+        Some(WHITE)
     }
+}
+
+#[inline]
+pub fn opposite_colour(colour: Colour) -> Colour {
+    1 - colour
 }
 
 pub fn char_to_piece_type(c: char) -> Option<PieceType> {
@@ -64,14 +150,14 @@ pub fn char_to_piece_type(c: char) -> Option<PieceType> {
 
 pub fn piece_type_to_char(p: PieceType) -> Option<char> {
     match p {
-        EMPTY =>  Some(' '),
+        EMPTY => Some(' '),
         PAWN => Some('p'),
         ROOK => Some('r'),
-        KNIGHT =>  Some('n'),
+        KNIGHT => Some('n'),
         BISHOP => Some('b'),
         QUEEN => Some('q'),
         KING => Some('k'),
-        _ => None
+        _ => None,
     }
 }
 
@@ -108,13 +194,13 @@ fn char_to_piece(c: char) -> Option<u32> {
     match piece_type {
         None => None,
         Some(pt) => {
-            let is_white = c == c.to_ascii_uppercase();
+            let is_black = c == c.to_ascii_lowercase();
 
-            let colour = if is_white { WHITE } else { BLACK };
-
-            let piece = pt | colour;
-
-            Some(piece)
+            if is_black {
+                Some(pt | BLACK_BIT)
+            } else {
+                Some(pt)
+            }
         }
     }
 }
@@ -125,19 +211,18 @@ fn piece_to_char(p: Piece) -> Option<char> {
     match result {
         None => None,
         Some(chr) => {
-            if p & WHITE != 0 {
+            if p & BLACK_BIT == 0 {
                 Some(chr.to_ascii_uppercase())
             } else {
                 Some(chr.to_ascii_lowercase())
             }
         }
     }
-    
 }
 
+#[inline]
 pub fn square_index(square: Square) -> usize {
-    println!("{:#?}", square);
-    return (square.0 + 16 * square.1).into();
+    (square.0 + 16 * square.1).into()
 }
 
 pub fn validate_long_algebraic_move(text: &str) -> bool {
@@ -178,24 +263,100 @@ impl Board {
             to,
             captured_piece,
             castling: self.castling,
-            // TODO: This is stupid - implement copy on Square.
             ep_square: self.epSquare,
-            halfmove_clock: self.halfmoveClock
+            halfmove_clock: self.halfmoveClock,
         };
         self.undo_stack.push(undo);
 
+        let ep_square = self.epSquare;
+        self.epSquare = Square(0, 0);
+
+        let moved_piece_colour = piece_colour(self.squares[from_index]).unwrap();
+
         match queening_piece {
-            None => {
-                self.squares[to_index] = self.squares[from_index];
-            },
+            None => self.squares[to_index] = self.squares[from_index],
             Some(piece_type) => {
-                let colour = piece_colour(self.squares[from_index]).unwrap();
-                self.squares[to_index] = get_piece(piece_type, colour);
+                self.squares[to_index] = get_piece(piece_type, moved_piece_colour);
             }
         }
+
+        let moved_piece_type = piece_type(self.squares[from_index]);
+
+        let is_pawn_move = moved_piece_type == PAWN;
+
+        if is_pawn_move {
+            let diff = max(from_index, to_index) - min(from_index, to_index);
+            if diff == 32 {
+                if from.1 == 1 {
+                    self.epSquare = Square(from.0, 2);
+                } else if from.1 == 6 {
+                    self.epSquare = Square(from.0, 5);
+                } else {
+                    panic!("Weird e.p. square!");
+                }
+            }
+
+            if to == ep_square {
+                let captured_pawn_square = if moved_piece_colour == WHITE {
+                    Square(ep_square.0, ep_square.1 - 1)
+                } else {
+                    Square(ep_square.0, ep_square.1 + 1)
+                };
+                let captured_pawn_square_index = square_index(captured_pawn_square);
+                let captured_pawn = self.squares[captured_pawn_square_index];
+                match piece_colour(captured_pawn) {
+                    None => panic!("Not a piece"),
+                    Some(colour) => {
+                        if colour != opposite_colour(moved_piece_colour)
+                            || piece_type(captured_pawn) != PAWN
+                        {
+                            panic!("Invalid e.p. capture piece");
+                        }
+                        self.squares[captured_pawn_square_index] = EMPTY;
+                    }
+                }
+            }
+        } else if moved_piece_type == KING {
+            println!("From: {}", from_index);
+
+            if from_index == KING_HOME_SQUARES[moved_piece_colour as usize] {
+                self.castling.remove(moved_piece_colour, None);
+            }
+
+            // Castling.
+            let diff = max(from_index, to_index) - min(from_index, to_index);
+            if diff == 2 {
+                let rook_square = if from_index < to_index {
+                    H_ROOK_HOME_SQUARES[moved_piece_colour as usize]
+                } else {
+                    A_ROOK_HOME_SQUARES[moved_piece_colour as usize]
+                };
+                let rook = self.squares[rook_square];
+                if piece_colour(rook).unwrap() != moved_piece_colour || piece_type(rook) != ROOK {
+                    panic!("Not a rook");
+                }
+                let rook_to = (from_index + to_index) / 2; // Avoid negative numbers.
+                self.squares[rook_to] = rook;
+                self.squares[rook_square] = EMPTY;
+            }
+        } else if moved_piece_type == ROOK {
+            if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as usize] {
+                self.castling
+                    .remove(moved_piece_colour, Some(BoardSide::Queenside));
+            } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as usize] {
+                self.castling
+                    .remove(moved_piece_colour, Some(BoardSide::Kingside));
+            }
+        }
+
+        // Reset the half move clock for pawn moves or captures.
+        if captured_piece != EMPTY || is_pawn_move {
+            self.halfmoveClock = 0;
+        }
+
         self.squares[from_index] = EMPTY;
 
-        // TODO: En passent captures, castling.
+        self.whiteToMove = !self.whiteToMove;
     }
 
     fn colour_to_move(&self) -> Colour {
@@ -238,7 +399,7 @@ impl Debug for Board {
         s.push_str(&sep);
         for i in (0x00..0x80).step_by(0x10).rev() {
             s.push_str("|");
-            for sq in self.squares[i..i+8].iter().map(|s| piece_to_char(*s)) {
+            for sq in self.squares[i..i + 8].iter().map(|s| piece_to_char(*s)) {
                 s.push(sq.unwrap());
                 s.push_str("|");
             }
@@ -254,11 +415,11 @@ impl Default for Board {
         Board {
             squares: [EMPTY; 128],
             whiteToMove: true,
-            castling: [true, true, true, true],
+            castling: CastlingRights { flags: 0 },
             epSquare: Square(0, 0),
             halfmoveClock: 0,
             fullmoveNumber: 0,
-            undo_stack: Vec::new()
+            undo_stack: Vec::new(),
         }
     }
 }
@@ -269,7 +430,7 @@ struct MoveUndo {
     captured_piece: Piece,
     ep_square: Square,
     halfmove_clock: u32,
-    castling: [bool; 4]
+    castling: CastlingRights,
 }
 
 struct FenIndexProvider {
@@ -322,7 +483,7 @@ impl FenIndexProvider {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Square(pub u8, pub u8);
 
 trait Move {
@@ -412,9 +573,21 @@ mod test {
         let mut b = Board::default();
         b.set_pieces_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
             .unwrap();
-        assert!(b.squares[0x77] == BLACK | ROOK);
-        assert!(b.squares[0x07] == WHITE | ROOK);
-        assert!(b.squares[0x70] == BLACK | ROOK);
-        assert!(b.squares[0x00] == WHITE | ROOK);
+        assert!(b.squares[0x77] == BLACK_BIT | ROOK);
+        assert!(b.squares[0x07] == ROOK);
+        assert!(b.squares[0x70] == BLACK_BIT | ROOK);
+        assert!(b.squares[0x00] == ROOK);
+    }
+
+    #[test]
+    fn test_piece_to_char() {
+        assert!('P' == piece_to_char(PAWN).unwrap());
+        assert!('p' == piece_to_char(PAWN | BLACK_BIT).unwrap());
+    }
+
+    #[test]
+    fn test_rank() {
+        assert!(File::A as u32 == 0);
+        assert!(Rank::One as u32 == 0);
     }
 }

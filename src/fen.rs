@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::board::{Colour, Square, char_to_piece_type, char_to_colour, str_to_square};
+use crate::board::{Colour, Square, char_to_piece_type, char_to_colour, str_to_square, CastlingRights, BLACK, WHITE, BoardSide};
 
 pub const STARTPOS_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -8,7 +8,7 @@ pub const STARTPOS_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ
 pub struct Fen {
     pub piecePlacement: String,
     pub sideToMove: Colour,
-    pub castling: [bool; 4],
+    pub castling: CastlingRights,
     pub epSquare: Square,
     pub halfmoveClock: u32,
     pub fullmoveNumber: u32,
@@ -74,12 +74,22 @@ pub fn parse_fen(fen: &str) -> Result<Fen, FenError> {
     if !re.is_match(castling_chars) {
         return Err(FenError::InvalidCastlingInfo);
     }
-    let castling = [
-        castling_chars.contains("K"),
-        castling_chars.contains("Q"),
-        castling_chars.contains("k"),
-        castling_chars.contains("q"),
-    ];
+
+    let mut castling_rights = CastlingRights::new();
+
+    for c in castling_chars.chars() {
+        let colour = match c.to_ascii_lowercase() == c {
+            true => BLACK,
+            false => WHITE,
+        };
+        let side = match c.to_ascii_lowercase() {
+            'k' => BoardSide::Kingside,
+            'q' => BoardSide::Queenside,
+            _ => return Err(FenError::InvalidCastlingInfo)
+        };
+        castling_rights.allow(colour, side);
+        
+    }
 
     let ep_square_str = parts.next().unwrap();
     let ep_square = match ep_square_str {
@@ -114,7 +124,7 @@ pub fn parse_fen(fen: &str) -> Result<Fen, FenError> {
     Ok(Fen {
         piecePlacement: String::from(piece_placements),
         sideToMove: colour_to_move,
-        castling: castling,
+        castling: castling_rights,
         epSquare: ep_square,
         halfmoveClock: halfmove,
         fullmoveNumber: fullmove
