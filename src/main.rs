@@ -1,14 +1,15 @@
-pub mod board;
 pub mod engine;
 pub mod fen;
+pub mod position0x88;
 pub mod uci;
 
-use std::env;
+// use std::env;
 
 use crate::{engine::Engine, uci::UciInterface};
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    // TODO: Implement args.
+    // let args: Vec<String> = env::args().collect();
 
     let engine = Engine::new();
 

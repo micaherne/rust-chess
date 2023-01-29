@@ -1,6 +1,9 @@
-use crate::{engine::Engine, board::LongAlgebraicNotationMove, fen::parse_fen};
+use crate::{
+    engine::Engine,
+    position0x88::notation::{LongAlgebraicNotationMove, set_from_fen, set_startpos, make_moves},
+};
 
-use std::{collections::VecDeque, io, borrow::Borrow};
+use std::{collections::VecDeque, io};
 
 pub struct UciInterface {
     pub engine: Engine,
@@ -38,7 +41,6 @@ impl UciInterface {
             }
         }
     }
-
 
     fn run_command(&mut self, keyword: &str, args: &mut VecDeque<&str>) {
         match keyword {
@@ -97,10 +99,10 @@ impl UciInterface {
         let pos_type = pos_type_opt.unwrap();
 
         if pos_type == "startpos" {
-            self.engine.board.set_startpos();
+            set_startpos(&mut self.engine.board);
         } else if pos_type == "fen" {
             let mut fen_string = String::new();
-            
+
             while args.front() != None && "moves" != *args.front().unwrap() {
                 let arg = args.pop_front().unwrap();
 
@@ -108,14 +110,7 @@ impl UciInterface {
                 fen_string.push_str(" ");
             }
 
-            let parsed_fen = parse_fen(&fen_string);
-
-            match parsed_fen {
-                Err(_fen_error) => return,
-                Ok(fen) => self.engine.board.set_from_fen(fen)
-            }
-            
-            
+            set_from_fen(&mut self.engine.board, &fen_string).unwrap();
         } else {
             return;
         }
@@ -131,13 +126,17 @@ impl UciInterface {
 
         let mut moves: Vec<LongAlgebraicNotationMove> = Vec::new();
         for move_text in args {
-            moves.push(LongAlgebraicNotationMove::from_text(move_text.to_string()));
+            let m = LongAlgebraicNotationMove::from_text(move_text.to_string());
+            match m {
+                Ok(m) => moves.push(m),
+                Err(_e) => println!("Invalid move {0}", move_text)
+            }
+            
         }
 
-        self.engine.board.make_moves(&moves);
+        make_moves(&mut self.engine.board, &moves);
 
         println!("{:#?}", self.engine.board);
-
     }
 
     fn process_go(&self, args: &VecDeque<&str>) {}

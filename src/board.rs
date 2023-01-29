@@ -9,11 +9,12 @@ use crate::fen::{parse_fen, Fen};
 
 pub struct Board {
     pub squares: [u32; 128],
-    pub whiteToMove: bool,
+    pub king_squares: [u32; 2],
+    pub side_to_move: Colour,
     pub castling: CastlingRights,
-    pub epSquare: Square,
-    pub halfmoveClock: u32,
-    pub fullmoveNumber: u32,
+    pub ep_square: Square,
+    pub halfmove_clock: u32,
+    pub fullmove_number: u32,
     undo_stack: Vec<MoveUndo>,
 }
 
@@ -62,6 +63,12 @@ pub type Colour = u32;
 /// A piece with colour, e.g. a black knight.
 pub type Piece = u32;
 
+pub type SquareIndex = usize;
+
+pub const OFFSETS_DIAGONAL: [i8; 4] = [17, -15, -17, 15];
+pub const OFFSETS_LINEAR: [i8; 4] = [16, 1, -16, -1];
+
+
 #[derive(PartialEq)]
 pub enum File {
     A,
@@ -94,20 +101,20 @@ pub enum BoardSide {
 pub const WHITE: Colour = 0;
 pub const BLACK: Colour = 1;
 
-const EMPTY: PieceType = 0;
-const PAWN: PieceType = 1;
-const ROOK: PieceType = 2;
-const KNIGHT: PieceType = 3;
-const BISHOP: PieceType = 4;
-const QUEEN: PieceType = 5;
-const KING: PieceType = 6;
+pub const EMPTY: PieceType = 0;
+pub const PAWN: PieceType = 1;
+pub const ROOK: PieceType = 2;
+pub const KNIGHT: PieceType = 3;
+pub const BISHOP: PieceType = 4;
+pub const QUEEN: PieceType = 5;
+pub const KING: PieceType = 6;
 
 // Bit to be set for black pieces;
 const BLACK_BIT: u32 = 1 << 5;
 
-const H_ROOK_HOME_SQUARES: [usize; 2] = [0x07, 0x77];
-const A_ROOK_HOME_SQUARES: [usize; 2] = [0x00, 0x70];
-const KING_HOME_SQUARES: [usize; 2] = [0x04, 0x74];
+const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
+const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
+const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
 
 const STARTPOS_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -169,19 +176,7 @@ pub fn char_to_colour(c: char) -> Option<Colour> {
     }
 }
 
-pub fn str_to_square(s: &str) -> Option<Square> {
-    let lower = s.to_ascii_lowercase();
-    let bytes = lower.as_bytes();
-    let file = bytes[0];
-    let file_no = file - 97;
-    let rank = bytes[1];
-    let rank_no = rank - 0x31;
-    if file > 7 || rank_no > 7 {
-        None
-    } else {
-        Some(Square(file_no, rank_no))
-    }
-}
+
 
 /// Converts a character to a piece with colour.
 ///
@@ -221,7 +216,7 @@ fn piece_to_char(p: Piece) -> Option<char> {
 }
 
 #[inline]
-pub fn square_index(square: Square) -> usize {
+pub fn square_index(square: Square) -> SquareIndex {
     (square.0 + 16 * square.1).into()
 }
 
@@ -234,11 +229,11 @@ impl Board {
     pub fn set_from_fen(&mut self, fen: Fen) {
         self.squares = [EMPTY; 128];
 
-        self.set_pieces_from_fen(&fen.piecePlacement).unwrap();
+        self.set_pieces_from_fen(&fen.piece_placement).unwrap();
         self.castling = fen.castling;
-        self.epSquare = fen.epSquare;
-        self.halfmoveClock = fen.halfmoveClock;
-        self.fullmoveNumber = fen.fullmoveNumber;
+        self.ep_square = Square(fen.ep_square.0, fen.ep_square.1);
+        self.halfmove_clock = fen.halfmove_clock;
+        self.fullmove_number = fen.fullmove_number;
     }
 
     pub fn set_startpos(&mut self) {
@@ -263,13 +258,13 @@ impl Board {
             to,
             captured_piece,
             castling: self.castling,
-            ep_square: self.epSquare,
-            halfmove_clock: self.halfmoveClock,
+            ep_square: self.ep_square,
+            halfmove_clock: self.halfmove_clock,
         };
         self.undo_stack.push(undo);
 
-        let ep_square = self.epSquare;
-        self.epSquare = Square(0, 0);
+        let ep_square = self.ep_square;
+        self.ep_square = Square(0, 0);
 
         let moved_piece_colour = piece_colour(self.squares[from_index]).unwrap();
 
@@ -288,9 +283,9 @@ impl Board {
             let diff = max(from_index, to_index) - min(from_index, to_index);
             if diff == 32 {
                 if from.1 == 1 {
-                    self.epSquare = Square(from.0, 2);
+                    self.ep_square = Square(from.0, 2);
                 } else if from.1 == 6 {
-                    self.epSquare = Square(from.0, 5);
+                    self.ep_square = Square(from.0, 5);
                 } else {
                     panic!("Weird e.p. square!");
                 }
@@ -319,7 +314,7 @@ impl Board {
         } else if moved_piece_type == KING {
             println!("From: {}", from_index);
 
-            if from_index == KING_HOME_SQUARES[moved_piece_colour as usize] {
+            if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex] {
                 self.castling.remove(moved_piece_colour, None);
             }
 
@@ -327,9 +322,9 @@ impl Board {
             let diff = max(from_index, to_index) - min(from_index, to_index);
             if diff == 2 {
                 let rook_square = if from_index < to_index {
-                    H_ROOK_HOME_SQUARES[moved_piece_colour as usize]
+                    H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
                 } else {
-                    A_ROOK_HOME_SQUARES[moved_piece_colour as usize]
+                    A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
                 };
                 let rook = self.squares[rook_square];
                 if piece_colour(rook).unwrap() != moved_piece_colour || piece_type(rook) != ROOK {
@@ -340,10 +335,10 @@ impl Board {
                 self.squares[rook_square] = EMPTY;
             }
         } else if moved_piece_type == ROOK {
-            if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as usize] {
+            if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
                 self.castling
                     .remove(moved_piece_colour, Some(BoardSide::Queenside));
-            } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as usize] {
+            } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
                 self.castling
                     .remove(moved_piece_colour, Some(BoardSide::Kingside));
             }
@@ -351,20 +346,12 @@ impl Board {
 
         // Reset the half move clock for pawn moves or captures.
         if captured_piece != EMPTY || is_pawn_move {
-            self.halfmoveClock = 0;
+            self.halfmove_clock = 0;
         }
 
         self.squares[from_index] = EMPTY;
 
-        self.whiteToMove = !self.whiteToMove;
-    }
-
-    fn colour_to_move(&self) -> Colour {
-        if self.whiteToMove {
-            WHITE
-        } else {
-            BLACK
-        }
+        self.side_to_move = opposite_colour(self.side_to_move);
     }
 
     fn set_pieces_from_fen(&mut self, fen_part: &str) -> Result<(), &str> {
@@ -374,7 +361,7 @@ impl Board {
                 // Assert that we're at the end of a row.
                 continue;
             } else if c.is_numeric() {
-                let x = c.to_digit(10).unwrap() as usize;
+                let x = c.to_digit(10).unwrap() as SquareIndex;
                 i.skip(x);
                 continue;
             }
@@ -390,6 +377,7 @@ impl Board {
         }
         Ok(())
     }
+
 }
 
 impl Debug for Board {
@@ -414,11 +402,12 @@ impl Default for Board {
     fn default() -> Self {
         Board {
             squares: [EMPTY; 128],
-            whiteToMove: true,
+            king_squares: [0; 2],
+            side_to_move: WHITE,
             castling: CastlingRights { flags: 0 },
-            epSquare: Square(0, 0),
-            halfmoveClock: 0,
-            fullmoveNumber: 0,
+            ep_square: Square(0, 0),
+            halfmove_clock: 0,
+            fullmove_number: 0,
             undo_stack: Vec::new(),
         }
     }
@@ -434,7 +423,7 @@ struct MoveUndo {
 }
 
 struct FenIndexProvider {
-    current: usize,
+    current: SquareIndex,
     valid: bool,
 }
 
@@ -452,7 +441,7 @@ impl FenIndexProvider {
         self.valid = true;
     }
 
-    fn next(&mut self) -> usize {
+    fn next(&mut self) -> SquareIndex {
         if !self.valid {
             panic!("All squares given")
         }
@@ -470,7 +459,7 @@ impl FenIndexProvider {
         result
     }
 
-    fn skip(&mut self, count: usize) {
+    fn skip(&mut self, count: SquareIndex) {
         if count > 8 {
             panic!("Can't skip more than 8 spaces");
         }
@@ -486,10 +475,16 @@ impl FenIndexProvider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Square(pub u8, pub u8);
 
-trait Move {
+///
+/// A move.
+///
+/// This uses the square abstraction so is only intended for use when parsing notation.
+/// Actual generated moves use the Move structure in the movegen crate for speed.
+///
+pub trait Move {
     fn from_square(&self) -> Square;
     fn to_square(&self) -> Square;
-    fn queening_piece(&self) -> Option<u32>;
+    fn queening_piece(&self) -> Option<Piece>;
 }
 
 #[derive(Debug)]

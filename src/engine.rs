@@ -1,7 +1,7 @@
-use crate::board::Board;
+use crate::{position0x88::Position};
 
 pub struct Engine {
-    pub board: Board,
+    pub board: Position,
     options: EngineOptions,
     initialised: bool,
 }
@@ -13,7 +13,7 @@ struct EngineOptions {
 impl Engine {
     pub fn new() -> Engine {
         return Engine {
-            board: Board::default(),
+            board: Position::default(), // Board::default(),
             options: EngineOptions { debug: false },
             initialised: false,
         };
