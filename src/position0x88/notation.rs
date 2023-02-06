@@ -10,9 +10,9 @@ use super::{
 
 use regex::Regex;
 
-const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
-const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
-const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
+pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
+pub const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
+pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
 
 pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> {
     // Check count first as it uses up the iterator.
@@ -45,19 +45,22 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
 
     position.castling_rights = CastlingRights::new();
 
-    for c in castling_chars.chars() {
-        let colour = match c.to_ascii_lowercase() == c {
-            true => BLACK,
-            false => WHITE,
-        };
-        let side = match c.to_ascii_lowercase() {
-            'k' => BoardSide::Kingside,
-            'q' => BoardSide::Queenside,
-            _ => return Err(FenError::InvalidCastlingInfo)
-        };
-        position.castling_rights.allow(colour, Some(side));
-        
+    if castling_chars != "-" {
+        for c in castling_chars.chars() {
+            let colour = match c.to_ascii_lowercase() == c {
+                true => BLACK,
+                false => WHITE,
+            };
+            let side = match c.to_ascii_lowercase() {
+                'k' => BoardSide::Kingside,
+                'q' => BoardSide::Queenside,
+                _ => return Err(FenError::InvalidCastlingInfo)
+            };
+            position.castling_rights.allow(colour, Some(side));
+            
+        }
     }
+    
 
     let ep_square_str = parts.next().unwrap();
     let ep_square = match ep_square_str {
@@ -180,10 +183,10 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
     let is_pawn_move = moved_piece_type == PAWN;
 
     if is_pawn_move {
-        let diff = max(from_index, to_index) - min(from_index, to_index);
+        
+        let diff = from_index.abs_diff(to_index);
         if diff == 32 {
             let from_rank = rank(from_index);
-            println!("{}", from_rank);
             if from_rank == 1 {
                 position.ep_square = square_index(from_rank, 2);
             } else if from_rank == 6 {
@@ -214,7 +217,6 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
             }
         }
     } else if moved_piece_type == KING {
-        println!("From: {}", from_index);
 
         if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex] {
             position.castling_rights.remove(moved_piece_colour, None);
@@ -236,6 +238,9 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
             position.squares[rook_to] = rook;
             position.squares[rook_square] = EMPTY;
         }
+
+        position.king_squares[moved_piece_colour as SquareIndex] = to_index;
+        
     } else if moved_piece_type == ROOK {
         if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
             position.castling_rights
@@ -338,6 +343,13 @@ pub fn str_to_square_index(s: &str) -> Option<SquareIndex> {
     } else {
         Some(square_index(rank_no, file_no))
     }
+}
+
+pub fn square_index_to_str(index: SquareIndex) -> String {
+    let mut result = String::new();
+    result.push((super::file(index) + 97) as char);
+    result.push((super::rank(index) + 0x31) as char);
+    result
 }
 
 /// Converts a character to a piece with colour.

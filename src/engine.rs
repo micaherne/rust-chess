@@ -6,8 +6,8 @@ use std::{
 use crate::{
     messages::{InputMessage, OutputMessage},
     position0x88::{
-        notation::{set_from_fen, set_startpos},
-        Position,
+        notation::{set_from_fen, set_startpos, LongAlgebraicNotationMove, make_moves},
+        Position, movegen::generate_moves,
     },
 };
 
@@ -68,7 +68,7 @@ impl Engine {
                 InputMessage::SetPositionFromFen(fen) => {
                     set_from_fen(&mut self.position, &fen).unwrap()
                 }
-                InputMessage::MakeMoves(moves) => println!("Making {} moves", moves.len()),
+                InputMessage::MakeMoves(moves) => make_moves(&mut self.position, &moves),
                 InputMessage::GetAvailableOptions => self
                     .sender
                     .send(OutputMessage::AvailableOptions(vec![]))
@@ -77,6 +77,11 @@ impl Engine {
                 InputMessage::SetDebug(value) => self.set_option_debug(value),
                 InputMessage::NewGame => {
                     // TODO: Clear caches and stuff.
+                },
+                InputMessage::Go(subcommands) => {
+                    let moves = generate_moves(&self.position);
+                    let alg_move: LongAlgebraicNotationMove = moves.get(0).unwrap().into();
+                    self.sender.send(OutputMessage::BestMove(alg_move, None)).unwrap();
                 }
             }
         }

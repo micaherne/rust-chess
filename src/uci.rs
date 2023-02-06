@@ -1,6 +1,6 @@
 use crate::{
     engine::Engine,
-    messages::{InputMessage, OutputMessage, AvailableOption},
+    messages::{InputMessage, OutputMessage, AvailableOption, GoSubcommand},
     position0x88::notation::{make_moves, set_from_fen, set_startpos, LongAlgebraicNotationMove},
 };
 
@@ -34,7 +34,8 @@ impl UciOutputListener {
         match message {
             OutputMessage::AvailableOptions(m) => self.process_available_options(m),
             OutputMessage::Ready => println!("readyok"),
-            OutputMessage::Quitting => {}
+            OutputMessage::Quitting => {},
+            OutputMessage::BestMove(mv, ponder)  => println!("bestmove {}", mv.text),
         }
     }
 
@@ -149,7 +150,7 @@ impl UciInputListener {
     }
 
     fn process_ucinewgame(&self) {
-        self.sender.send(InputMessage::NewGame);
+        self.sender.send(InputMessage::NewGame).unwrap();
     }
 
     fn process_position(&self, args: &mut VecDeque<&str>) {
@@ -202,7 +203,62 @@ impl UciInputListener {
     }
 
     fn process_go(&self, args: &mut VecDeque<&str>) {
-        todo!()
+        let subcommand_tokens = ["searchmoves", "ponder", "wtime", "btime", "winc", "binc", "movestogo",
+        "depth", "nodes", "mate", "movetime", "infininte"];
+        let mut subcommands: Vec<GoSubcommand> = vec![];
+        loop {
+            let subcommand_name = args.pop_front();
+            if subcommand_name == None {
+                break;
+            }
+
+            let subcommand = subcommand_name.unwrap_or("invalid");
+            if subcommand == "invalid" {
+                break;
+            }
+
+            if !subcommand_tokens.contains(&subcommand) {
+                break;
+            }
+
+            let mut subcommand_params:Vec<&str> = vec![];
+
+            while let Some(arg) = args.pop_front() {
+                if subcommand_tokens.contains(&arg) {
+                    args.push_front(arg);
+                    break;
+                }
+                subcommand_params.push(arg);
+            }
+
+            match subcommand {
+                "searchmoves" => {
+                    let mut moves: Vec<LongAlgebraicNotationMove> = vec![];
+                    for m in subcommand_params {
+                        moves.push(LongAlgebraicNotationMove::from_text(m.to_string()).unwrap());
+                    }
+                    subcommands.push(GoSubcommand::SearchMoves(moves));
+                },
+                "ponder" => subcommands.push(GoSubcommand::Ponder),
+                "wtime" => subcommands.push(GoSubcommand::WTime(subcommand_params[0].parse::<u64>().unwrap())),
+                "btime" => subcommands.push(GoSubcommand::BTime(subcommand_params[0].parse::<u64>().unwrap())),
+                "winc" => subcommands.push(GoSubcommand::WInc(subcommand_params[0].parse::<u64>().unwrap())),
+                "binc" => subcommands.push(GoSubcommand::BInc(subcommand_params[0].parse::<u64>().unwrap())),
+                "movestogo" => subcommands.push(GoSubcommand::MovesToGo(subcommand_params[0].parse::<u64>().unwrap())),
+                "depth" => subcommands.push(GoSubcommand::Depth(subcommand_params[0].parse::<u64>().unwrap())),
+                "nodes" => subcommands.push(GoSubcommand::Nodes(subcommand_params[0].parse::<u64>().unwrap())),
+                "mate" => subcommands.push(GoSubcommand::Mate(subcommand_params[0].parse::<u64>().unwrap())),
+                "movetime" => subcommands.push(GoSubcommand::MoveTime(subcommand_params[0].parse::<u64>().unwrap())),
+                "infinite" => subcommands.push(GoSubcommand::Infinite),
+                _ => {}
+            }
+
+        }
+
+        let message: InputMessage = InputMessage::Go(subcommands);
+
+        self.sender.send(message).unwrap();
+
     }
 
     fn process_stop(&self) {

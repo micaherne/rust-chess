@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use self::notation::piece_to_char;
 
+pub mod movegen;
 pub mod notation;
 
 /// The type of a piece, without colour, e.g. knight, bishop etc.
@@ -144,6 +145,16 @@ fn file(square: SquareIndex) -> RankOrFileIndex {
 #[inline]
 fn rank(square: SquareIndex) -> RankOrFileIndex {
     square as u8 >> 4
+}
+
+#[inline]
+fn diagonal(square: SquareIndex) -> RankOrFileIndex {
+    7 + rank(square) - file(square)
+}
+
+#[inline]
+fn antidiagonal(square: SquareIndex) -> RankOrFileIndex {
+    rank(square) + file(square)
 }
 
 #[inline]
