@@ -96,6 +96,7 @@ struct MoveUndo {
     castling_rights: CastlingRights,
 }
 
+#[derive(Clone, Copy)]
 pub enum BoardSide {
     Queenside,
     Kingside,

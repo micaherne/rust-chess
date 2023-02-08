@@ -1,8 +1,8 @@
-use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
+use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY, notation::H_ROOK_HOME_SQUARES};
 
 use super::{
     file,
-    notation::{piece_type_to_char, square_index_to_str, LongAlgebraicNotationMove},
+    notation::{piece_type_to_char, square_index_to_str, LongAlgebraicNotationMove, KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
     BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK,
 };
@@ -72,7 +72,7 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 
     let is_check = side_to_move_in_check(position);
 
-    // TODO: Only generate check evasions / filter generated moves to check evasions at end.
+    // Check evasions are filtered out at the end.
 
     for piece_square in 0..=0x77 {
         if piece_square & 0x88 != 0 {
@@ -104,41 +104,56 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
                     if forward_dir == dir || -forward_dir == dir {
                         forward_dir
                     } else {
-                        continue;
+                        0
                     }
                 }
                 None => PAWN_PUSH_DIRECTIONS[current_piece_colour as usize],
             };
-            let allowed_squares =
-                match rank(piece_square) == PAWN_HOME_RANK[current_piece_colour as usize] {
-                    true => 2,
-                    false => 1,
-                };
-            let mut next_square = piece_square as i16;
-            for _ in 0..allowed_squares {
-                next_square = next_square + direction;
-                if !is_valid_square(next_square) {
-                    break;
-                }
-                if position.squares[next_square as SquareIndex] != EMPTY {
-                    break;
-                }
 
-                let is_queening =
-                    rank(next_square as usize) == PAWN_QUEEN_RANK[current_piece_colour as usize];
+            if direction != 0 {
+                let allowed_squares =
+                    match rank(piece_square) == PAWN_HOME_RANK[current_piece_colour as usize] {
+                        true => 2,
+                        false => 1,
+                    };
+                let mut next_square = piece_square as i16;
+                for _ in 0..allowed_squares {
+                    next_square = next_square + direction;
+                    if !is_valid_square(next_square) {
+                        break;
+                    }
+                    if position.squares[next_square as SquareIndex] != EMPTY {
+                        break;
+                    }
 
-                create_pawn_moves(
-                    piece_square,
-                    next_square as SquareIndex,
-                    is_queening,
-                    &mut result,
-                );
+                    let is_queening = rank(next_square as usize)
+                        == PAWN_QUEEN_RANK[current_piece_colour as usize];
+
+                    create_pawn_moves(
+                        piece_square,
+                        next_square as SquareIndex,
+                        is_queening,
+                        &mut result,
+                    );
+                }
             }
 
             // Generate pawn captures.
             // TODO: Take account of pins against the king.
-            // TODO: en passent captures.
             for dir in PAWN_CAPTURE_DIRECTIONS[current_piece_colour as usize] {
+                if dir == 0 {
+                    break;
+                }
+
+                match opt_pinned_direction {
+                    None => (),
+                    Some(d) => {
+                        if dir != d && dir != -d {
+                            continue;
+                        }
+                    }
+                }
+
                 let to_square = piece_square as i16 + dir;
                 if !is_valid_square(to_square) {
                     continue;
@@ -148,6 +163,10 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
                     (to_square as usize == position.ep_square) && position.ep_square != 0;
 
                 if !is_en_passent && position.squares[to_square as SquareIndex] == EMPTY {
+                    continue;
+                }
+
+                if is_en_passent && is_en_passent_pin(&position, piece_square) {
                     continue;
                 }
 
@@ -177,40 +196,35 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
                 );
             }
         } else if piece_type == KNIGHT {
-            create_non_sliding_moves(position, piece_square, piece_type, &mut result);
+            // A pinned knight can't move.
+            if opt_pinned_direction == None {
+                create_non_sliding_moves(position, piece_square, piece_type, &mut result);
+            }
         } else if piece_type == KING {
             let mut temp_moves: Vec<Move> = vec![];
             create_non_sliding_moves(position, piece_square, piece_type, &mut temp_moves);
+
             // Check for check and add to result if ok.
             for potential_move in temp_moves {
                 if is_legal_king_move(position, &potential_move, current_piece_colour) {
-                    if potential_move.from_index.abs_diff(potential_move.to_index) == 1 {
+                    // Check if we can also castle.
+                    if potential_move.from_index == KING_HOME_SQUARES[current_piece_colour as usize]
+                        // it's horizontal
+                        && potential_move.from_index.abs_diff(potential_move.to_index) == 1
+                        // and not a capture
+                        && super::piece_type(position.squares[potential_move.to_index]) == EMPTY
+                    {
                         let move_dir =
-                            potential_move.to_index as i32 - potential_move.from_index as i32;
+                            (potential_move.to_index as i32) - (potential_move.from_index as i32);
+
                         let board_side = match move_dir {
                             -1 => BoardSide::Queenside,
                             1 => BoardSide::Kingside,
                             _ => panic!("Invalid board side"),
                         };
 
-                        if position
-                            .castling_rights
-                            .allowed(current_piece_colour, board_side)
-                        {
-                            let to_square = potential_move.from_index as i32 + move_dir;
-                            let castling_move = Move {
-                                from_index: potential_move.from_index,
-                                to_index: to_square as usize,
-                                queening_piece: None,
-                            };
+                        add_castling_if_allowed(position, current_piece_colour, board_side, &mut result);
 
-                            // Note that this call should be fine even though we're ignoring the intermediate square
-                            // rather than the actual king square as the initial sideways move wouldn't be legal if the
-                            // king is being attacked from the other side.
-                            if is_legal_king_move(position, &castling_move, current_piece_colour) {
-                                result.push(castling_move);
-                            }
-                        }
                     }
 
                     result.push(potential_move);
@@ -227,6 +241,100 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
     result
 }
 
+/// Is the king protected across a rank by only the two pawns involved in an en passent capture?
+/// This does not check if the position is en passent so should only be called when we already know it is.
+fn is_en_passent_pin(position: &Position, capturing_pawn_square: SquareIndex) -> bool {
+    if rank(capturing_pawn_square) != rank(position.king_squares[position.side_to_move as usize]) {
+        return false;
+    }
+    let captured_square = match capturing_pawn_square < position.ep_square {
+        true => position.ep_square - 16,
+        false => position.ep_square + 16,
+    };
+    let dir_from_king:Direction = match position.king_squares[position.side_to_move as usize] > capturing_pawn_square {
+        true => -1,
+        false => 1
+    };
+
+    let mut next_square = position.king_squares[position.side_to_move as usize] as i16 + dir_from_king;
+
+    while is_valid_square(next_square) {
+        if next_square as usize == capturing_pawn_square || next_square as usize == captured_square || position.squares[next_square as usize] == EMPTY {
+            next_square += dir_from_king;
+            continue;
+        }
+        
+        let pt = piece_type(position.squares[next_square as usize]);
+        debug_assert!(pt != EMPTY);
+
+        let colour = piece_colour(position.squares[next_square as usize]);
+
+        debug_assert!(colour.is_some());
+
+        if colour.unwrap() == position.side_to_move {
+            return false;
+        }
+
+        return pt == ROOK || pt == QUEEN;
+        
+    }
+
+    false
+}
+
+fn add_castling_if_allowed(position: &Position, colour: Colour, board_side: BoardSide, moves: &mut Vec<Move>) {
+    
+    // This also implicitly asserts that the rook is there.
+    if !position.castling_rights.allowed(colour, board_side) {
+        return;
+    }
+    
+    let king_square = position.king_squares[colour as usize];
+    
+    debug_assert!(piece_type(position.squares[king_square]) == KING );
+
+    let move_dir: Direction = match board_side {
+        BoardSide::Kingside => 1,
+        BoardSide::Queenside => -1
+    };
+
+    debug_assert!(piece_type(position.squares[(king_square as i16 + move_dir) as SquareIndex]) == EMPTY);
+
+    let to_square = (king_square as i16 + 2i16 * move_dir) as SquareIndex;
+
+    debug_assert!(is_valid_square(to_square as i16));
+
+    let squares_are_empty = match board_side {
+        BoardSide::Kingside => {
+            position.squares[to_square as SquareIndex] == EMPTY
+        }
+        BoardSide::Queenside => {
+            let knights_square = (to_square as i16 + move_dir) as SquareIndex;
+            position.squares[to_square as SquareIndex] == EMPTY
+                && position.squares[knights_square]
+                    == EMPTY
+        }
+    };
+
+    if !squares_are_empty && !is_square_attacked(position, to_square, colour, None) {
+        return;
+    }
+
+    let castling_move = Move {
+        from_index: king_square,
+        to_index: to_square,
+        queening_piece: None,
+    };
+
+    // Note that this call should be fine even though we're ignoring the intermediate square
+    // rather than the actual king square as the initial sideways move wouldn't be legal if the
+    // king is being attacked from the other side.
+    if is_legal_king_move(position, &castling_move, colour) {
+        moves.push(castling_move);
+    }
+
+}
+
 fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move> {
     let mut result = vec![];
     let king_square = position.king_squares[position.side_to_move as usize];
@@ -234,7 +342,7 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
     let attackers = attackers_of_square(&position, king_square);
 
     // If it's double check, only allow king moves.
-    if attackers.len() > 1{
+    if attackers.len() > 1 {
         for m in moves {
             if m.from_index != king_square {
                 continue;
@@ -248,7 +356,7 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
 
     if attacking_piece == KNIGHT || attacking_piece == PAWN {
         for m in moves {
-            if m.from_index != king_square {
+            if m.from_index != king_square && m.to_index != attackers[0].0 {
                 continue;
             }
             result.push(m);
@@ -257,7 +365,7 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
     }
 
     let opt_direction = direction(king_square, attackers[0].0);
-    
+
     debug_assert!(opt_direction != None);
 
     let direction = opt_direction.unwrap();
@@ -277,9 +385,11 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
 
         intermediate_squares.push(next_square as SquareIndex);
     }
-    
+
     for m in moves {
         if m.from_index == king_square || intermediate_squares.contains(&m.to_index) {
+            result.push(m);
+        } else if m.to_index == attackers[0].0 {
             result.push(m);
         }
     }
@@ -287,7 +397,10 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
     result
 }
 
-fn attackers_of_square(position: &Position, piece_square: SquareIndex) -> Vec<(SquareIndex, Piece)> {
+fn attackers_of_square(
+    position: &Position,
+    piece_square: SquareIndex,
+) -> Vec<(SquareIndex, Piece)> {
     let mut result = vec![];
     let opt_piece_colour = piece_colour(position.squares[piece_square]);
     if opt_piece_colour == None {
@@ -306,11 +419,16 @@ fn attackers_of_square(position: &Position, piece_square: SquareIndex) -> Vec<(S
             continue;
         }
         let piece_type = piece_type(possible_attacker.1);
+        if piece_type == KING {
+            continue;
+        }
+
+        // Presumably pawn attacks are checked elsewhere.
         if piece_type == PAWN {
-        } else {
-            if PIECE_DIRECTIONS[piece_type as usize].contains(&dir) {
-                result.push(possible_attacker);
-            }
+            continue;
+        } 
+        if PIECE_DIRECTIONS[piece_type as usize].contains(&dir) {
+            result.push(possible_attacker);
         }
     }
 
@@ -342,7 +460,7 @@ fn attackers_of_square(position: &Position, piece_square: SquareIndex) -> Vec<(S
             }
         }
     }
-    
+
     result
 }
 
@@ -447,6 +565,9 @@ pub fn is_square_attacked_by_slider(
     false
 }
 
+/// Check that the king is not moving into check.
+/// Note that this doesn't check it's an actual legal move.
+/// TODO: Rename this function.
 pub fn is_legal_king_move(position: &Position, move_to_test: &Move, moving_colour: Colour) -> bool {
     !is_square_attacked(
         position,
@@ -692,10 +813,12 @@ pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
 
 #[cfg(test)]
 mod test {
+    use std::{env, fs, io};
+
     use crate::position0x88::{
         get_piece,
-        notation::{set_from_fen, set_startpos, make_move},
-        BLACK, KING, PAWN,
+        notation::{make_move, set_from_fen, set_startpos},
+        BLACK, KING, PAWN, WHITE,
     };
 
     use super::*;
@@ -719,13 +842,37 @@ mod test {
     #[test]
     fn test_generate_moves_check() {
         let mut position = Position::default();
-        set_from_fen(&mut position, "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ").expect("Failed");
+        set_from_fen(
+            &mut position,
+            "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ",
+        )
+        .expect("Failed");
         let m = generate_moves(&position);
         for mov in &m {
-            let m2:LongAlgebraicNotationMove = mov.into();
+            let m2: LongAlgebraicNotationMove = mov.into();
             print!("{:#?}", m2);
         }
         assert_eq!(5, m.len());
+    }
+
+    #[test]
+    fn test_create_non_sliding_moves() {
+        let mut position = Position::default();
+        set_from_fen(
+            &mut position,
+            "rnb1kbnr/ppq1pppp/2pp4/8/6P1/2P5/PP1PPPBP/RNBQK1NR w KQkq -",
+        )
+        .unwrap();
+        let mut r: Vec<Move> = vec![];
+        create_non_sliding_moves(
+            &position,
+            position.king_squares[WHITE as usize],
+            KING,
+            &mut r,
+        );
+        assert_eq!(1, r.len());
+        assert_eq!(0x04, r[0].from_index);
+        assert_eq!(0x05, r[0].to_index);
     }
 
     #[test]
@@ -768,19 +915,70 @@ mod test {
     #[test]
     fn test_side_to_move_in_check() {
         let mut pos = Position::default();
-        set_from_fen(&mut pos, "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ").expect("Aaargh!");
+        set_from_fen(
+            &mut pos,
+            "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ",
+        )
+        .expect("Aaargh!");
         assert_eq!(true, side_to_move_in_check(&pos));
+    }
+
+    #[test]
+    fn test_ep_pin() {
+        let mut pos = Position::default();
+        set_from_fen(&mut pos, "1k6/8/8/r2pP1K1/8/8/8/8 w - d6 0 1 ").expect("Failed");
+        let moves = generate_moves(&pos);
+        assert_eq!(9, moves.len());
     }
 
     #[test]
     fn test_temp() {
         let mut pos = Position::default();
         // set_from_fen(&mut pos, "rnbq1bnr/3Pkppp/4p3/8/2P1P3/2N2N2/PP2BPPP/R1BQ1RK1 b - - 2 12").unwrap();
+        //set_from_fen(&mut pos, "1B3k2/6r1/8/1p1ppK1r/4N3/6P1/Rp4N1/6b1 w - -").unwrap();
+        // set_from_fen(&mut pos, "r3kbnr/p7/1p1B1q2/3b1p1P/PpPp4/2Q4N/3PPP1P/RN2KB1R b KQkq -").unwrap();
+        set_from_fen(&mut pos, "2NqkbnN/1Q1P4/4Pn2/5p2/5Pp1/3BB1Pp/P6P/2KR3R b - - 0 26 ").unwrap();
         // set_pos_from_position_command(&mut pos, "position startpos moves e2e4 a7a6 d2d4 a6a5 g1f3 a5a4 c2c4 a4a3 b1a3 b7b6 f1e2 b6b5 a3b5 c7c6 b5c3 c6c5 d4c5 d7d6 c5d6 e7e6 d6d7 e8e7 e1g1");
-        set_pos_from_position_command(&mut pos, "position startpos moves c2c4 a7a6 c4c5 a6a5 a2a4 b7b6 c5b6 c7c6 d2d4 c6c5 c1f4 c5c4 b1c3 d7d6 d1c2 d6d5 e1c1 e7e6 g1f3 e6e5 f3e5 f7f6 e5f3 f6f5 e2e4 d5e4 c3e4 c4c3 d1e1 c3b2 c2b2 f5e4 e1e4 c8e6 e4e6 d8e7 e6e7 e8d8 f1b5");
+        // set_pos_from_position_command(&mut pos, "position startpos moves c2c4 a7a6 c4c5 a6a5 a2a4 b7b6 c5b6 c7c6 d2d4 c6c5 c1f4 c5c4 b1c3 d7d6 d1c2 d6d5 e1c1 e7e6 g1f3 e6e5 f3e5 f7f6 e5f3 f6f5 e2e4 d5e4 c3e4 c4c3 d1e1 c3b2 c2b2 f5e4 e1e4 c8e6 e4e6 d8e7 e6e7 e8d8 f1b5");
         let moves = generate_moves(&pos);
         for mv in &moves {
             println!("{}", mv.to_string());
+        }
+    }
+
+    #[test]
+    fn test_move_gen() {
+        let cwd = env::current_dir().unwrap();
+        let root = cwd.ancestors().next().unwrap();
+        let path = root.join("tests/perft.txt");
+        let perft_contents = fs::read_to_string(path).unwrap();
+        let perft_lines = perft_contents.split("\n");
+        for line in perft_lines {
+            if line.trim() == "" {
+                break;
+            }
+            let line_parts: Vec<&str> = line.split(',').collect();
+
+            let fen = line_parts[0];
+
+            // println!("Creating from FEN: {}", fen);
+            let mut position = Position::default();
+            set_from_fen(&mut position, fen).unwrap();
+
+            let moves = generate_moves(&position);
+            let target: usize = line_parts[1].parse().unwrap();
+
+            // println!("{:#?}", position);
+
+            // println!("FEN: {}", fen);
+
+            for i in &moves {
+                // print!("{} ", i.to_string());
+            }
+            // println!("");
+
+            assert_eq!(target, moves.len());
+
         }
     }
 

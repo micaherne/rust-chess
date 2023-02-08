@@ -4,8 +4,9 @@ use crate::fen::{FenError, STARTPOS_FEN};
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
-    square_index, Colour, Piece, PieceType, Position, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK,
-    EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE, CastlingRights, BoardSide, MoveUndo, piece_colour, get_piece, piece_type, rank, opposite_colour,
+    get_piece, movegen::Move, opposite_colour, piece_colour, piece_type, rank, square_index,
+    BoardSide, CastlingRights, Colour, MoveUndo, Piece, PieceType, Position, SquareIndex, BISHOP,
+    BLACK, COLOUR_BIT_MASK, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
 use regex::Regex;
@@ -17,7 +18,7 @@ pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
 pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> {
     // Check count first as it uses up the iterator.
     let cnt = fen.split_ascii_whitespace().count();
-    if cnt != 6 {
+    if cnt != 4 && cnt != 6 {
         return Err(FenError::IncorrectNumberOfParts);
     }
 
@@ -34,7 +35,7 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
     }
     match char_to_colour(side_to_move.chars().next().unwrap()) {
         None => return Err(FenError::InvalidColourToMove),
-        Some(side) => position.side_to_move = side
+        Some(side) => position.side_to_move = side,
     }
 
     let re = Regex::new("^([KQkq]+|-)$").unwrap();
@@ -54,13 +55,11 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
             let side = match c.to_ascii_lowercase() {
                 'k' => BoardSide::Kingside,
                 'q' => BoardSide::Queenside,
-                _ => return Err(FenError::InvalidCastlingInfo)
+                _ => return Err(FenError::InvalidCastlingInfo),
             };
             position.castling_rights.allow(colour, Some(side));
-            
         }
     }
-    
 
     let ep_square_str = parts.next().unwrap();
     let ep_square = match ep_square_str {
@@ -69,24 +68,32 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
             let ep = str_to_square_index(x);
             match ep {
                 Some(sq) => sq,
-                None => return Err(FenError::InvalidSquare)
+                None => return Err(FenError::InvalidSquare),
             }
         }
     };
 
     position.ep_square = ep_square;
 
-    let halfmove_str = parts.next().unwrap();
+    let halfmove = parts.next();
+
+    if halfmove == None {
+        position.halfmove_clock = 0;
+        position.fullmove_number = 1;
+        return Ok(());
+    }
+
+    let halfmove_str = halfmove.unwrap();
 
     match halfmove_str.parse::<u32>() {
         Err(_e) => return Err(FenError::InvalidDigit),
-        Ok(halfmove) => position.halfmove_clock = halfmove
+        Ok(halfmove) => position.halfmove_clock = halfmove,
     }
 
     let fullmove_str = parts.next().unwrap();
     match fullmove_str.parse::<u32>() {
         Err(_e) => return Err(FenError::InvalidDigit),
-        Ok(fullmove) => position.fullmove_number = fullmove
+        Ok(fullmove) => position.fullmove_number = fullmove,
     }
 
     Ok(())
@@ -154,7 +161,12 @@ pub fn make_moves(position: &mut Position, moves: &Vec<LongAlgebraicNotationMove
     }
 }
 
-pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: SquareIndex, queening_piece: Option<PieceType>) {
+pub fn make_move(
+    position: &mut Position,
+    from_index: SquareIndex,
+    to_index: SquareIndex,
+    queening_piece: Option<PieceType>,
+) {
     let captured_piece = position.squares[to_index];
     let undo = MoveUndo {
         from_index,
@@ -183,21 +195,19 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
     let is_pawn_move = moved_piece_type == PAWN;
 
     if is_pawn_move {
-        
         let diff = from_index.abs_diff(to_index);
         if diff == 32 {
             let from_rank = rank(from_index);
             if from_rank == 1 {
                 position.ep_square = square_index(from_rank, 2);
             } else if from_rank == 6 {
-                position.ep_square =square_index(from_rank, 5);
+                position.ep_square = square_index(from_rank, 5);
             } else {
                 panic!("Weird e.p. square!");
             }
         }
 
         if to_index == ep_square {
-            
             let captured_pawn_square = if moved_piece_colour == WHITE {
                 from_index - 16
             } else {
@@ -217,7 +227,6 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
             }
         }
     } else if moved_piece_type == KING {
-
         if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex] {
             position.castling_rights.remove(moved_piece_colour, None);
         }
@@ -240,13 +249,14 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
         }
 
         position.king_squares[moved_piece_colour as SquareIndex] = to_index;
-        
     } else if moved_piece_type == ROOK {
         if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
-            position.castling_rights
+            position
+                .castling_rights
                 .remove(moved_piece_colour, Some(BoardSide::Queenside));
         } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
-            position.castling_rights
+            position
+                .castling_rights
                 .remove(moved_piece_colour, Some(BoardSide::Kingside));
         }
     }
@@ -258,7 +268,57 @@ pub fn make_move(position: &mut Position, from_index: SquareIndex, to_index: Squ
 
     position.squares[from_index] = EMPTY;
 
+    if position.side_to_move == BLACK {
+        position.fullmove_number += 1;
+    }
+
     position.side_to_move = opposite_colour(position.side_to_move);
+}
+
+pub fn undo_move(position: &mut Position) {
+    debug_assert!(position.undo_stack.len() > 0);
+
+    let undo = position.undo_stack.pop().unwrap();
+
+    // En passent.
+    let is_enpassent = undo.to_index == undo.ep_square;
+    let mut capture_square = undo.to_index;
+    if is_enpassent {
+        capture_square = match undo.from_index < undo.to_index {
+            true => undo.to_index - 16,
+            false => undo.to_index + 16,
+        };
+    }
+
+    let is_king_move = piece_type(position.squares[undo.to_index]) == KING;
+
+    let side_moved = opposite_colour(position.side_to_move);
+
+    // Castling.
+    if is_king_move && undo.to_index.abs_diff(undo.from_index) == 2 {
+        let rook_index = (undo.to_index + undo.from_index) / 2;
+
+        debug_assert!(piece_type(position.squares[rook_index]) == ROOK);
+
+        let rook_from_index = match undo.to_index < undo.from_index {
+            true => A_ROOK_HOME_SQUARES[side_moved as usize],
+            false => H_ROOK_HOME_SQUARES[side_moved as usize],
+        };
+
+        position.squares[rook_from_index] = position.squares[rook_index];
+        position.squares[rook_index] = EMPTY;
+    }
+
+    position.squares[undo.from_index] = position.squares[undo.to_index];
+    position.squares[capture_square] = undo.captured_piece;
+
+    position.ep_square = undo.ep_square;
+    position.castling_rights = undo.castling_rights;
+    position.halfmove_clock = undo.halfmove_clock;
+    if position.side_to_move == WHITE {
+        position.fullmove_number -= 1;
+    }
+    position.side_to_move = side_moved;
 }
 
 #[derive(Debug)]
@@ -268,11 +328,13 @@ pub struct LongAlgebraicNotationMove {
 
 #[derive(Debug)]
 pub enum LongAlgebraicNotationError {
-    InvalidMove
+    InvalidMove,
 }
 
 impl LongAlgebraicNotationMove {
-    pub fn from_text(text: String) -> Result<LongAlgebraicNotationMove, LongAlgebraicNotationError> {
+    pub fn from_text(
+        text: String,
+    ) -> Result<LongAlgebraicNotationMove, LongAlgebraicNotationError> {
         if validate_long_algebraic_move(&text) {
             Ok(LongAlgebraicNotationMove { text })
         } else {
@@ -467,9 +529,13 @@ mod test {
         assert_eq!(0x74, position.king_squares[BLACK as usize]);
         assert_eq!(0x04, position.king_squares[WHITE as usize]);
         assert!(position.castling_rights.allowed(WHITE, BoardSide::Kingside));
-        assert!(position.castling_rights.allowed(WHITE, BoardSide::Queenside));
+        assert!(position
+            .castling_rights
+            .allowed(WHITE, BoardSide::Queenside));
         assert!(position.castling_rights.allowed(BLACK, BoardSide::Kingside));
-        assert!(position.castling_rights.allowed(BLACK, BoardSide::Queenside));
+        assert!(position
+            .castling_rights
+            .allowed(BLACK, BoardSide::Queenside));
         assert_eq!(0, position.ep_square);
         assert_eq!(WHITE, position.side_to_move);
         assert_eq!(0, position.halfmove_clock);
@@ -481,5 +547,19 @@ mod test {
         let mv1 = LongAlgebraicNotationMove::from_text("e2e4".to_string()).unwrap();
         assert_eq!(0x14, mv1.from_square());
         assert_eq!(0x34, mv1.to_square());
+    }
+
+    #[test]
+    fn test_undo_move() {
+        let mut position = Position::default();
+        set_startpos(&mut position);
+        let moves: Vec<LongAlgebraicNotationMove> = ["e2e4", "e7e5", "f2f4", "e5f4", "f1b5", "b8c6", "g1f3", "a7a6", "e1g1"].map(|x| LongAlgebraicNotationMove::from_text(x.to_string()).unwrap()).into();
+        make_moves(&mut position, &moves);
+        for i in 0..9 {
+            undo_move(&mut position);
+        }
+        
+        println!("{:#?}", position);
+
     }
 }
