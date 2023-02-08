@@ -4,9 +4,11 @@ use crate::fen::{FenError, STARTPOS_FEN};
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
-    get_piece, movegen::Move, opposite_colour, piece_colour, piece_type, rank, square_index,
-    BoardSide, CastlingRights, Colour, MoveUndo, Piece, PieceType, Position, SquareIndex, BISHOP,
-    BLACK, COLOUR_BIT_MASK, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
+    get_piece,
+    movegen::{is_valid_square, Move},
+    opposite_colour, piece_colour, piece_type, rank, square_index, BoardSide, CastlingRights,
+    Colour, MoveUndo, Piece, PieceType, Position, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK,
+    EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
 use regex::Regex;
@@ -14,6 +16,53 @@ use regex::Regex;
 pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
 pub const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
 pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
+
+pub fn to_fen(position: &Position) -> String {
+    let mut result = String::new();
+    for line_start in (0..8).rev() {
+        let mut empty_square_count = 0;
+        for i in 0..8 {
+            let square_index = (line_start << 4) + i;
+
+            debug_assert!(is_valid_square(square_index as i16));
+
+            let piece = position.squares[square_index];
+            if piece == EMPTY {
+                empty_square_count += 1;
+            } else {
+                if empty_square_count > 0 {
+                    result.push_str(&empty_square_count.to_string());
+                    empty_square_count = 0;
+                }
+                result.push(piece_to_char(piece).unwrap());
+            }
+        }
+        if empty_square_count > 0 {
+            result.push_str(&empty_square_count.to_string());
+            empty_square_count = 0;
+        }
+        if line_start > 0 {
+            result.push('/');
+        }
+    }
+
+    result.push(' ');
+    result.push(colour_to_char(position.side_to_move).unwrap_or_else(|| '-'));
+    result.push(' ');
+    result.push_str(castling_rights_to_string(&position.castling_rights).as_str());
+    let mut ep_string = square_index_to_str(position.ep_square);
+    if ep_string == "a1" {
+        ep_string = "-".to_string();
+    }
+    result.push(' ');
+    result.push_str(&ep_string);
+    result.push(' ');
+    result.push_str(position.halfmove_clock.to_string().as_str());
+    result.push(' ');
+    result.push_str(position.fullmove_number.to_string().as_str());
+
+    result
+}
 
 pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> {
     // Check count first as it uses up the iterator.
@@ -167,7 +216,24 @@ pub fn make_move(
     to_index: SquareIndex,
     queening_piece: Option<PieceType>,
 ) {
-    let captured_piece = position.squares[to_index];
+
+    debug_assert!(position.squares[from_index] != EMPTY);
+
+    let moved_piece_type = piece_type(position.squares[from_index]);
+
+    let is_pawn_move = moved_piece_type == PAWN;
+
+    let is_enpassent = is_pawn_move && to_index == position.ep_square;
+    let mut capture_square = to_index;
+    
+    if is_enpassent {
+        capture_square = match from_index < to_index {
+            true => to_index - 16,
+            false => to_index + 16,
+        };
+    }
+
+    let captured_piece = position.squares[capture_square];
     let undo = MoveUndo {
         from_index,
         to_index,
@@ -190,10 +256,6 @@ pub fn make_move(
         }
     }
 
-    let moved_piece_type = piece_type(position.squares[from_index]);
-
-    let is_pawn_move = moved_piece_type == PAWN;
-
     if is_pawn_move {
         let diff = from_index.abs_diff(to_index);
         if diff == 32 {
@@ -209,9 +271,9 @@ pub fn make_move(
 
         if to_index == ep_square {
             let captured_pawn_square = if moved_piece_colour == WHITE {
-                from_index - 16
+                to_index - 16
             } else {
-                from_index + 16
+                to_index + 16
             };
             let captured_pawn = position.squares[captured_pawn_square];
             match piece_colour(captured_pawn) {
@@ -261,6 +323,12 @@ pub fn make_move(
         }
     }
 
+    // Remove the e.p. capture if necessary.
+    if is_enpassent {
+        position.squares[capture_square] = EMPTY;
+    }
+    
+
     // Reset the half move clock for pawn moves or captures.
     if captured_piece != EMPTY || is_pawn_move {
         position.halfmove_clock = 0;
@@ -281,7 +349,7 @@ pub fn undo_move(position: &mut Position) {
     let undo = position.undo_stack.pop().unwrap();
 
     // En passent.
-    let is_enpassent = undo.to_index == undo.ep_square;
+    let is_enpassent = undo.to_index == undo.ep_square && piece_type(position.squares[undo.to_index]) == PAWN;
     let mut capture_square = undo.to_index;
     if is_enpassent {
         capture_square = match undo.from_index < undo.to_index {
@@ -310,6 +378,11 @@ pub fn undo_move(position: &mut Position) {
     }
 
     position.squares[undo.from_index] = position.squares[undo.to_index];
+
+    if is_enpassent {
+        position.squares[undo.to_index] = EMPTY;
+    }
+
     position.squares[capture_square] = undo.captured_piece;
 
     position.ep_square = undo.ep_square;
@@ -393,6 +466,14 @@ pub fn char_to_colour(c: char) -> Option<Colour> {
     }
 }
 
+pub fn colour_to_char(colour: Colour) -> Option<char> {
+    match colour {
+        BLACK => Some('b'),
+        WHITE => Some('w'),
+        _ => None,
+    }
+}
+
 pub fn str_to_square_index(s: &str) -> Option<SquareIndex> {
     let lower = s.to_ascii_lowercase();
     let bytes = lower.as_bytes();
@@ -451,6 +532,18 @@ pub fn piece_to_char(p: Piece) -> Option<char> {
     }
 }
 
+pub fn castling_rights_to_string(castling: &CastlingRights) -> String {
+    let mut result = String::new();
+    for (i, c) in "KQkq".chars().enumerate() {
+        if castling.flags & (1 << (3 - i)) != 0 {
+            result.push(c);
+        }
+    }
+    if result.len() == 0 {
+        result.push('-');
+    }
+    result
+}
 pub fn validate_long_algebraic_move(text: &str) -> bool {
     let re = Regex::new("^([a-h][1-8]){2}[rnbq]?$").unwrap();
     re.is_match(text)
@@ -487,6 +580,7 @@ mod test {
     fn test_str_to_square_index() {
         assert_eq!(0x44, str_to_square_index("e5").unwrap());
         assert_eq!(0x44, str_to_square_index("E5").unwrap());
+        assert_eq!(0x53, str_to_square_index("d6").unwrap());
         assert_eq!(None, str_to_square_index("X20"));
     }
 
@@ -550,16 +644,32 @@ mod test {
     }
 
     #[test]
+    fn test_move_ep() {
+        let mut position = Position::default();
+        let original_fen = "6k1/8/8/3pP3/8/8/8/6K1 w - d6 2 1";
+        set_from_fen(&mut position, &original_fen).unwrap();
+        assert_eq!(0x53, position.ep_square);
+        make_move(&mut position, 0x44, 0x53, None);
+        assert_eq!("6k1/8/3P4/8/8/8/8/6K1 b - - 0 1", to_fen(&position));
+        undo_move(&mut position);
+        assert_eq!(original_fen, to_fen(&position));
+        println!("{}", to_fen(&position));
+    }
+
+    #[test]
     fn test_undo_move() {
         let mut position = Position::default();
         set_startpos(&mut position);
-        let moves: Vec<LongAlgebraicNotationMove> = ["e2e4", "e7e5", "f2f4", "e5f4", "f1b5", "b8c6", "g1f3", "a7a6", "e1g1"].map(|x| LongAlgebraicNotationMove::from_text(x.to_string()).unwrap()).into();
+        let moves: Vec<LongAlgebraicNotationMove> = [
+            "e2e4", "e7e5", "f2f4", "e5f4", "f1b5", "b8c6", "g1f3", "a7a6", "e1g1",
+        ]
+        .map(|x| LongAlgebraicNotationMove::from_text(x.to_string()).unwrap())
+        .into();
         make_moves(&mut position, &moves);
-        for i in 0..9 {
+        for _ in 0..9 {
             undo_move(&mut position);
         }
-        
-        println!("{:#?}", position);
 
+        // println!("{:#?}", position);
     }
 }
