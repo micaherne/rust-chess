@@ -1,11 +1,12 @@
-use std::cmp::{max, min};
-
-use crate::{fen::{FenError, STARTPOS_FEN}, position0x88::file};
+use crate::{
+    fen::{FenError, STARTPOS_FEN},
+    position0x88::file,
+};
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
     get_piece,
-    movegen::{is_valid_square, Move},
+    movegen::{is_valid_square},
     opposite_colour, piece_colour, piece_type, rank, square_index, BoardSide, CastlingRights,
     Colour, MoveUndo, Piece, PieceType, Position, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK,
     EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
@@ -39,7 +40,6 @@ pub fn to_fen(position: &Position) -> String {
         }
         if empty_square_count > 0 {
             result.push_str(&empty_square_count.to_string());
-            empty_square_count = 0;
         }
         if line_start > 0 {
             result.push('/');
@@ -201,13 +201,16 @@ pub fn set_startpos(position: &mut Position) {
     set_from_fen(position, STARTPOS_FEN).unwrap();
 }
 
-pub fn make_moves(position: &mut Position, moves: &Vec<LongAlgebraicNotationMove>) {
+pub fn make_moves(position: &mut Position, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo> {
+    let mut result: Vec<MoveUndo> = vec![];
     for mv in moves {
         let from = mv.from_square();
         let to = mv.to_square();
         let queening_piece = mv.queening_piece();
-        make_move(position, from, to, queening_piece)
+        let undo = make_move(position, from, to, queening_piece);
+        result.push(undo);
     }
+    result
 }
 
 pub fn make_move(
@@ -215,7 +218,7 @@ pub fn make_move(
     from_index: SquareIndex,
     to_index: SquareIndex,
     queening_piece: Option<PieceType>,
-) {
+) -> MoveUndo {
     let moved_piece = position.squares[from_index];
     debug_assert!(moved_piece != EMPTY);
 
@@ -245,7 +248,6 @@ pub fn make_move(
         ep_square: position.ep_square,
         halfmove_clock: position.halfmove_clock,
     };
-    position.undo_stack.push(undo);
 
     let ep_square = position.ep_square;
     position.ep_square = 0;
@@ -307,7 +309,11 @@ pub fn make_move(
             };
             let rook = position.squares[rook_square];
             if piece_colour(rook).unwrap() != moved_piece_colour {
-                panic!("Wrong piece colour: {:x} FEN: {}", rook_square, to_fen(position));
+                panic!(
+                    "Wrong piece colour: {:x} FEN: {}",
+                    rook_square,
+                    to_fen(position)
+                );
             }
             if piece_type(rook) != ROOK {
                 panic!("Not a rook");
@@ -336,9 +342,13 @@ pub fn make_move(
     // Test for rook captures and remove castling rights.
     if captured_piece != EMPTY && piece_type(captured_piece) == ROOK {
         if capture_square == A_ROOK_HOME_SQUARES[opp_side_colour as usize] {
-            position.castling_rights.remove(opp_side_colour, Some(BoardSide::Queenside));
+            position
+                .castling_rights
+                .remove(opp_side_colour, Some(BoardSide::Queenside));
         } else if capture_square == H_ROOK_HOME_SQUARES[opp_side_colour as usize] {
-            position.castling_rights.remove(opp_side_colour, Some(BoardSide::Kingside));
+            position
+                .castling_rights
+                .remove(opp_side_colour, Some(BoardSide::Kingside));
         }
     }
 
@@ -359,12 +369,11 @@ pub fn make_move(
     }
 
     position.side_to_move = opp_side_colour;
+
+    undo
 }
 
-pub fn undo_move(position: &mut Position) {
-    debug_assert!(position.undo_stack.len() > 0);
-
-    let undo = position.undo_stack.pop().unwrap();
+pub fn undo_move(position: &mut Position, undo: MoveUndo) {
 
     // En passent.
     let is_enpassent =
@@ -577,7 +586,9 @@ pub fn validate_long_algebraic_move(text: &str) -> bool {
 #[cfg(test)]
 mod test {
 
-    use crate::{fen::STARTPOS_FEN, perft::{self, perft, divide}};
+    use crate::{
+        fen::STARTPOS_FEN,
+    };
 
     use super::*;
 
@@ -674,9 +685,9 @@ mod test {
         let original_fen = "6k1/8/8/3pP3/8/8/8/6K1 w - d6 2 1";
         set_from_fen(&mut position, &original_fen).unwrap();
         assert_eq!(0x53, position.ep_square);
-        make_move(&mut position, 0x44, 0x53, None);
+        let undo = make_move(&mut position, 0x44, 0x53, None);
         assert_eq!("6k1/8/3P4/8/8/8/8/6K1 b - - 0 1", to_fen(&position));
-        undo_move(&mut position);
+        undo_move(&mut position, undo);
         assert_eq!(original_fen, to_fen(&position));
         println!("{}", to_fen(&position));
     }
@@ -695,8 +706,8 @@ mod test {
         let fen = "rn3b1r/1bqpp1k1/p7/2p2p1p/P2P4/2N1P1P1/1pK1NPP1/R3QB1R b - - 0 1";
         let mut position = Position::default();
         set_from_fen(&mut position, fen).unwrap();
-        make_move(&mut position, 17, 0, Some(KNIGHT));
-        undo_move(&mut position);
+        let undo = make_move(&mut position, 17, 0, Some(KNIGHT));
+        undo_move(&mut position, undo);
         assert_eq!(fen, to_fen(&position));
     }
 
@@ -709,12 +720,17 @@ mod test {
         ]
         .map(|x| LongAlgebraicNotationMove::from_text(x.to_string()).unwrap())
         .into();
-        make_moves(&mut position, &moves);
-        for _ in 0..9 {
-            undo_move(&mut position);
+        let mut undo_stack = make_moves(&mut position, &moves);
+        loop  {
+            let undo = undo_stack.pop();
+            if let None = undo {
+                break;
+            }
+            undo_move(&mut position, undo.unwrap());
         }
+
+        assert_eq!(STARTPOS_FEN, to_fen(&position));
 
         // println!("{:#?}", position);
     }
-    
 }

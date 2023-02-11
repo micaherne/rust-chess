@@ -1,11 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
-    error::Error,
     io::{BufRead, BufReader, Write},
-    ops::Div,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    thread::sleep,
-    time::Duration, u8, num::ParseIntError,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio}, u8,
 };
 
 use crate::position0x88::{
@@ -34,9 +30,9 @@ pub fn perft(position: &mut Position, depth: u16) -> usize {
     }
 
     for m in moves {
-        make_move(position, m.from_index, m.to_index, m.queening_piece);
+        let undo = make_move(position, m.from_index, m.to_index, m.queening_piece);
         nodes += perft(position, depth - 1);
-        undo_move(position);
+        undo_move(position, undo);
     }
 
     nodes
@@ -54,10 +50,10 @@ pub fn divide(position: &mut Position, depth: u16) -> DivideResults {
         #[cfg(debug_assertions)]
         let before_fen = to_fen(position);
 
-        make_move(position, m.from_index, m.to_index, m.queening_piece);
+        let undo = make_move(position, m.from_index, m.to_index, m.queening_piece);
         let nodes = perft(position, depth - 1);
         total += nodes;
-        undo_move(position);
+        undo_move(position, undo);
 
         #[cfg(debug_assertions)]
         {
@@ -141,6 +137,8 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
         moves.push(biggest_diff_move);
     }
 
+    stockfish.quit();
+
     // println!("Moves: {:#?}", moves);
 }
 
@@ -184,24 +182,6 @@ pub struct DivideResults {
 struct DivideDiff {
     missing_moves: Vec<String>,
     different_counts: HashMap<String, (usize, usize)>,
-}
-
-impl DivideDiff {
-    pub fn biggest_diff_move(&self) -> Option<String> {
-        let mut result = "";
-        let mut max = 0;
-        if self.different_counts.len() == 0 {
-            return None;
-        }
-        for m in self.different_counts.keys() {
-            let cnts = self.different_counts.get(m).unwrap();
-            if cnts.1 - cnts.0 > max {
-                result = m;
-                max = cnts.1 - cnts.0;
-            }
-        }
-        Some(result.to_string())
-    }
 }
 
 struct StockfishConnector {
@@ -317,10 +297,10 @@ pub fn run_divide(args: VecDeque<String>) {
     let mut total = 0;
 
     for m in moves {
-        make_move(&mut position, m.from_index, m.to_index, m.queening_piece);
+        let undo = make_move(&mut position, m.from_index, m.to_index, m.queening_piece);
         let nodes = perft(&mut position, depth_int - 1);
         total += nodes;
-        undo_move(&mut position);
+        undo_move(&mut position, undo);
         println!("{} {}", m.to_string(), nodes);
     }
 

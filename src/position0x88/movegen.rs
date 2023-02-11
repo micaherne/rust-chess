@@ -1,4 +1,4 @@
-use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY, notation::H_ROOK_HOME_SQUARES};
+use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
 
 use super::{
     file,
@@ -34,7 +34,7 @@ const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Move {
     pub from_index: SquareIndex,
     pub to_index: SquareIndex,
@@ -865,11 +865,11 @@ pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
 
 #[cfg(test)]
 mod test {
-    use std::{env, fs, io};
+    use std::{env, fs};
 
     use crate::{position0x88::{
         get_piece,
-        notation::{make_move, set_from_fen, set_startpos},
+        notation::{set_from_fen, set_startpos},
         BLACK, KING, PAWN, WHITE,
     }, perft::{perft, divide}};
 
@@ -1066,31 +1066,5 @@ mod test {
         }
     }
 
-    fn set_pos_from_position_command(position: &mut Position, command: &str) {
-        let mut parts = command.split_ascii_whitespace();
-        if parts.next().unwrap() != "position" {
-            panic!("Position not found")
-        }
-        if parts.next().unwrap() == "startpos" {
-            set_startpos(position);
-        } else {
-            todo!("Implement FEN");
-        }
 
-        let moves_token = parts.next();
-        if moves_token == None {
-            return;
-        } else if moves_token.unwrap() != "moves" {
-            panic!("Moves not found");
-        }
-
-        loop {
-            let m_opt = parts.next();
-            if m_opt == None {
-                break;
-            }
-            let m = LongAlgebraicNotationMove::from_text(m_opt.unwrap().to_string()).unwrap();
-            make_move(position, m.from_square(), m.to_square(), m.queening_piece());
-        }
-    }
 }

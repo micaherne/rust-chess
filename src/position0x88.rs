@@ -33,6 +33,7 @@ pub const KING: PieceType = 6;
 pub type SquareIndex = usize;
 pub type RankOrFileIndex = u8;
 
+#[derive(Clone, Copy)]
 pub struct Position {
     squares: [PieceType; 128],
     king_squares: [SquareIndex; 2],
@@ -41,7 +42,6 @@ pub struct Position {
     ep_square: SquareIndex,
     halfmove_clock: u32,
     fullmove_number: u32,
-    undo_stack: Vec<MoveUndo>,
 }
 
 impl Position {
@@ -51,7 +51,6 @@ impl Position {
             self.king_squares[piece_colour(piece).unwrap() as usize] = square;
         }
     }
-
 }
 
 impl Debug for Position {
@@ -82,12 +81,12 @@ impl Default for Position {
             ep_square: 0,
             halfmove_clock: 0,
             fullmove_number: 0,
-            undo_stack: vec![],
         }
     }
 }
 
-struct MoveUndo {
+#[derive(Clone, Copy)]
+pub struct MoveUndo {
     from_index: SquareIndex,
     to_index: SquareIndex,
     moved_piece: Piece,
@@ -256,7 +255,7 @@ mod test {
         assert!(!castling.allowed(BLACK, BoardSide::Queenside));
         assert!(castling.allowed(BLACK, BoardSide::Kingside));
 
-        let mut castling2 = CastlingRights { flags: 0b1011 };
+        let castling2 = CastlingRights { flags: 0b1011 };
         assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
     }
 }
