@@ -1,22 +1,40 @@
 pub mod engine;
 pub mod fen;
 pub mod messages;
+pub mod perft;
 pub mod position0x88;
+pub mod search;
 pub mod uci;
 
 // use std::env;
 
-use std::{thread, sync::mpsc};
+use std::{thread, sync::mpsc, collections::VecDeque, env};
 
 use messages::{InputMessage, OutputMessage};
+use perft::{run_perft, run_divide, run_perft_compare};
 use uci::{UciInputListener, UciOutputListener};
 
 use crate::{engine::Engine};
 
 fn main() {
-    // TODO: Implement args.
-    // let args: Vec<String> = env::args().collect();
+    let mut args: VecDeque<String> = env::args().collect();
 
+    let _executable = args.pop_front();
+
+    let command_str = args.pop_front().unwrap_or("uci".to_string());
+    let command = command_str.as_str();
+
+    match command {
+        "uci" => run_uci(),
+        "perft" => run_perft(args),
+        "perftcompare" => run_perft_compare(&mut args),
+        "divide" => run_divide(args),
+        _ => println!("Invalid command {}", command)
+    }
+    
+}
+
+fn run_uci() {
     let (input_sender, input_receiver) = mpsc::channel::<InputMessage>();
     let (output_sender, output_receiver) = mpsc::channel::<OutputMessage>();
 
@@ -45,6 +63,4 @@ fn main() {
     engine_handle.join().unwrap();
     h.join().unwrap();
     output_handle.join().unwrap();
-
-    
 }

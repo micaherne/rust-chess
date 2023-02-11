@@ -9,7 +9,7 @@ use super::{
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
 
-const PIECE_TYPES_COUNT: usize = 7;
+pub const PIECE_TYPES_COUNT: usize = 7;
 const MAX_DIRECTIONS_COUNT: usize = 8;
 
 pub type PieceDirections = [Direction; MAX_DIRECTIONS_COUNT];
@@ -36,9 +36,9 @@ const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
 #[derive(Debug)]
 pub struct Move {
-    from_index: SquareIndex,
-    to_index: SquareIndex,
-    queening_piece: Option<Piece>,
+    pub from_index: SquareIndex,
+    pub to_index: SquareIndex,
+    pub queening_piece: Option<Piece>,
 }
 
 impl ToString for Move {
@@ -208,7 +208,8 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
             for potential_move in temp_moves {
                 if is_legal_king_move(position, &potential_move, current_piece_colour) {
                     // Check if we can also castle.
-                    if potential_move.from_index == KING_HOME_SQUARES[current_piece_colour as usize]
+                    if !is_check 
+                        && potential_move.from_index == KING_HOME_SQUARES[current_piece_colour as usize]
                         // it's horizontal
                         && potential_move.from_index.abs_diff(potential_move.to_index) == 1
                         // and not a capture
@@ -241,20 +242,52 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
     result
 }
 
-/// Is the king protected across a rank by only the two pawns involved in an en passent capture?
+/// Test for the capture pawn being pinned against the king in an en passent capture.
 /// This does not check if the position is en passent so should only be called when we already know it is.
 fn is_en_passent_pin(position: &Position, capturing_pawn_square: SquareIndex) -> bool {
-    if rank(capturing_pawn_square) != rank(position.king_squares[position.side_to_move as usize]) {
-        return false;
-    }
+
     let captured_square = match capturing_pawn_square < position.ep_square {
         true => position.ep_square - 16,
         false => position.ep_square + 16,
     };
-    let dir_from_king:Direction = match position.king_squares[position.side_to_move as usize] > capturing_pawn_square {
-        true => -1,
-        false => 1
-    };
+
+    let king_square = position.king_squares[position.side_to_move as usize];
+
+    let opt_dir_from_king = direction(king_square, captured_square);
+    if opt_dir_from_king == None {
+        return false;
+    }
+    let dir_from_king = opt_dir_from_king.unwrap();
+
+    // If it's a vertical pin the capturing pawn will continue the pin.
+    if dir_from_king.abs() == 16  {
+        return false;
+    }
+
+    let king_on_same_rank = rank(capturing_pawn_square) == rank(king_square);
+
+    if !king_on_same_rank {
+        let p = next_piece_in_direction(position, king_square, dir_from_king, Some(captured_square));
+        if p == None {
+            return false;
+        }
+        let potential_attacker = p.unwrap().1;
+        if piece_colour(potential_attacker).unwrap() == position.side_to_move {
+            return false;
+        }
+        let potential_attacker_piece = piece_type(potential_attacker);
+        if !is_sliding_piece(potential_attacker_piece) {
+            return false;
+        }
+        
+        return PIECE_DIRECTIONS[potential_attacker_piece as usize].contains(&dir_from_king);
+    }
+
+    // Check for horizontal pin. That is, is the king protected across a rank by only the two pawns involved
+    // in an en passent capture?
+
+    // This could use the next_piece_in_direction() function if we were to expand that to allow multiple
+    // ignore squares but this is the only place where that would be useful so simpler to code it separately.
 
     let mut next_square = position.king_squares[position.side_to_move as usize] as i16 + dir_from_king;
 
@@ -341,6 +374,12 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
 
     let attackers = attackers_of_square(&position, king_square);
 
+    if attackers.len() == 0 {
+        println!("{:#?} Square: {:x}", position, king_square);
+    }
+
+    debug_assert!(attackers.len() != 0);
+
     // If it's double check, only allow king moves.
     if attackers.len() > 1 {
         for m in moves {
@@ -356,6 +395,14 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
 
     if attacking_piece == KNIGHT || attacking_piece == PAWN {
         for m in moves {
+            // Check for e.p. capture of a checking pawn.
+            if attacking_piece == PAWN && m.to_index == position.ep_square && piece_type(position.squares[m.from_index]) == PAWN {
+                if rank(attackers[0].0) == rank(m.from_index) 
+                    && file(attackers[0].0) == file(m.to_index) {
+                        result.push(m);
+                        continue;
+                }
+            }
             if m.from_index != king_square && m.to_index != attackers[0].0 {
                 continue;
             }
@@ -516,6 +563,8 @@ pub fn is_square_attacked_by_non_slider(
         piece_type => PIECE_DIRECTIONS[piece_type as usize],
     };
 
+    debug_assert!(test_piece_type != EMPTY);
+
     for dir in piece_directions {
         if dir == 0 {
             break;
@@ -531,6 +580,9 @@ pub fn is_square_attacked_by_non_slider(
         if piece_colour(attack_piece) == Some(moving_colour) {
             continue;
         }
+
+        debug_assert!(attack_piece != EMPTY);
+
         return true;
     }
 
@@ -815,11 +867,11 @@ pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
 mod test {
     use std::{env, fs, io};
 
-    use crate::position0x88::{
+    use crate::{position0x88::{
         get_piece,
         notation::{make_move, set_from_fen, set_startpos},
         BLACK, KING, PAWN, WHITE,
-    };
+    }, perft::{perft, divide}};
 
     use super::*;
 
@@ -926,24 +978,43 @@ mod test {
     #[test]
     fn test_ep_pin() {
         let mut pos = Position::default();
-        set_from_fen(&mut pos, "1k6/8/8/r2pP1K1/8/8/8/8 w - d6 0 1 ").expect("Failed");
-        let moves = generate_moves(&pos);
-        assert_eq!(9, moves.len());
+        let fen = "8/5K2/8/3pP3/8/8/b4k2/8 w - d6 0 1";
+        set_from_fen(&mut pos, fen).unwrap();
+        assert!(is_en_passent_pin(&pos, 0x44));
+
+        let mut pos2 = Position::default();
+        let fen2 = "3K4/8/8/3pP3/8/8/5k2/3r4 b - d6 0 1";
+        set_from_fen(&mut pos2, fen2).unwrap();
+        assert!(!is_en_passent_pin(&pos2, 0x44));
     }
 
     #[test]
-    fn test_temp() {
+    fn test_ep_horizontal_pin() {
         let mut pos = Position::default();
-        // set_from_fen(&mut pos, "rnbq1bnr/3Pkppp/4p3/8/2P1P3/2N2N2/PP2BPPP/R1BQ1RK1 b - - 2 12").unwrap();
-        //set_from_fen(&mut pos, "1B3k2/6r1/8/1p1ppK1r/4N3/6P1/Rp4N1/6b1 w - -").unwrap();
-        // set_from_fen(&mut pos, "r3kbnr/p7/1p1B1q2/3b1p1P/PpPp4/2Q4N/3PPP1P/RN2KB1R b KQkq -").unwrap();
-        set_from_fen(&mut pos, "2NqkbnN/1Q1P4/4Pn2/5p2/5Pp1/3BB1Pp/P6P/2KR3R b - - 0 26 ").unwrap();
-        // set_pos_from_position_command(&mut pos, "position startpos moves e2e4 a7a6 d2d4 a6a5 g1f3 a5a4 c2c4 a4a3 b1a3 b7b6 f1e2 b6b5 a3b5 c7c6 b5c3 c6c5 d4c5 d7d6 c5d6 e7e6 d6d7 e8e7 e1g1");
-        // set_pos_from_position_command(&mut pos, "position startpos moves c2c4 a7a6 c4c5 a6a5 a2a4 b7b6 c5b6 c7c6 d2d4 c6c5 c1f4 c5c4 b1c3 d7d6 d1c2 d6d5 e1c1 e7e6 g1f3 e6e5 f3e5 f7f6 e5f3 f6f5 e2e4 d5e4 c3e4 c4c3 d1e1 c3b2 c2b2 f5e4 e1e4 c8e6 e4e6 d8e7 e6e7 e8d8 f1b5");
-        let moves = generate_moves(&pos);
-        for mv in &moves {
-            println!("{}", mv.to_string());
-        }
+        set_from_fen(&mut pos, "1k6/8/8/r2pP1K1/8/8/8/8 w - d6 0 1 ").unwrap();
+        assert!(is_en_passent_pin(&pos, 0x44));
+    }
+
+    #[test]
+    fn test_ep_vertical_pin() {
+        let mut pos = Position::default();
+        set_from_fen(&mut pos, "rB5r/pp4k1/5n2/q3p2p/Pb3pP1/1P1P3p/R2QPP2/1N2KBR1 b - g3 0 2").unwrap();
+        assert!(!is_en_passent_pin(&pos, 0x35));
+    }
+
+    #[test]
+    fn test_move_gen_temp() {
+        let mut position: Position = Position::default();
+        // let fen = "r3kbnr/8/1p1B1q2/p2b1p1P/PpPp4/4Q2N/3PPP1P/RN2KB1R b KQkq - 0 1".to_string();
+        // let fen = "rb6/5b2/1p2r3/p1k1P3/PpPPp3/2R4P/8/1N1K2R1 b - d3 0 1".to_string();
+        // let fen = "r3kbnr/2qn2p1/8/pppBpp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR w KQkq - 0 1".to_string();
+        // let fen = "B3kbnr/2qn2p1/8/ppp1pp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR b KQkq - 0 1".to_string();
+        // let fen = "rb6/8/1pr5/p1k1P3/PpbPp3/5R1P/6R1/1N1K4 b - d3 0 2".to_string();
+        // let fen = "2b1kbn1/r1pq4/n2p3p/3Pp1p1/ppP2PP1/PPB4P/Q4P2/RN2KBNR w KQ e6 0 3".to_string();
+        let fen = "rB5r/pp4k1/5n2/q3p2p/Pb3pP1/1P1P3p/R2QPP2/1N2KBR1 b - g3 0 2".to_string();
+        set_from_fen(&mut position, &fen).unwrap();
+        let moves = divide(&mut position, 1);
+        println!("{:#?}", moves);
     }
 
     #[test]
@@ -953,6 +1024,7 @@ mod test {
         let path = root.join("tests/perft.txt");
         let perft_contents = fs::read_to_string(path).unwrap();
         let perft_lines = perft_contents.split("\n");
+        let mut line_no = 1;
         for line in perft_lines {
             if line.trim() == "" {
                 break;
@@ -965,19 +1037,31 @@ mod test {
             let mut position = Position::default();
             set_from_fen(&mut position, fen).unwrap();
 
-            let moves = generate_moves(&position);
-            let target: usize = line_parts[1].parse().unwrap();
+            println!("{}: {}", line_no, fen);
+            line_no += 1;
+            let perft1 = perft(&mut position, 1);
+            // let perft2 = perft(&mut position, 2);
+            // let perft3 = perft(&mut position, 3);
+            // let perft4 = perft(&mut position, 4);
+            let target1: usize = line_parts[1].parse().unwrap();
+            // let target2: usize = line_parts[2].parse().unwrap();
+            // let target3: usize = line_parts[3].parse().unwrap();
+            // let target4: usize = line_parts[4].parse().unwrap();
+            assert_eq!(target1, perft1);
+            // assert_eq!(target2, perft2);
+            // assert_eq!(target3, perft3);
+            // assert_eq!(target4, perft4);
 
             // println!("{:#?}", position);
 
             // println!("FEN: {}", fen);
 
-            for i in &moves {
+            //for i in &moves {
                 // print!("{} ", i.to_string());
-            }
+            //}
             // println!("");
 
-            assert_eq!(target, moves.len());
+            
 
         }
     }

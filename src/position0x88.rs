@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use self::notation::piece_to_char;
 
+pub mod evaluate;
 pub mod movegen;
 pub mod notation;
 
@@ -40,7 +41,7 @@ pub struct Position {
     ep_square: SquareIndex,
     halfmove_clock: u32,
     fullmove_number: u32,
-    undo_stack: Vec<MoveUndo>
+    undo_stack: Vec<MoveUndo>,
 }
 
 impl Position {
@@ -51,7 +52,6 @@ impl Position {
         }
     }
 
-    
 }
 
 impl Debug for Position {
@@ -82,7 +82,7 @@ impl Default for Position {
             ep_square: 0,
             halfmove_clock: 0,
             fullmove_number: 0,
-            undo_stack: vec![]
+            undo_stack: vec![],
         }
     }
 }
@@ -90,6 +90,7 @@ impl Default for Position {
 struct MoveUndo {
     from_index: SquareIndex,
     to_index: SquareIndex,
+    moved_piece: Piece,
     captured_piece: Piece,
     ep_square: SquareIndex,
     halfmove_clock: u32,
@@ -254,6 +255,8 @@ mod test {
         assert!(castling.allowed(WHITE, BoardSide::Queenside));
         assert!(!castling.allowed(BLACK, BoardSide::Queenside));
         assert!(castling.allowed(BLACK, BoardSide::Kingside));
-    }
 
+        let mut castling2 = CastlingRights { flags: 0b1011 };
+        assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
+    }
 }

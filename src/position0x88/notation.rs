@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::fen::{FenError, STARTPOS_FEN};
+use crate::{fen::{FenError, STARTPOS_FEN}, position0x88::file};
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
@@ -216,16 +216,18 @@ pub fn make_move(
     to_index: SquareIndex,
     queening_piece: Option<PieceType>,
 ) {
+    let moved_piece = position.squares[from_index];
+    debug_assert!(moved_piece != EMPTY);
 
-    debug_assert!(position.squares[from_index] != EMPTY);
+    let dbg_fen = to_fen(position);
 
-    let moved_piece_type = piece_type(position.squares[from_index]);
+    let moved_piece_type = piece_type(moved_piece);
 
     let is_pawn_move = moved_piece_type == PAWN;
 
-    let is_enpassent = is_pawn_move && to_index == position.ep_square;
+    let is_enpassent = is_pawn_move && position.ep_square != 0 && to_index == position.ep_square;
     let mut capture_square = to_index;
-    
+
     if is_enpassent {
         capture_square = match from_index < to_index {
             true => to_index - 16,
@@ -237,6 +239,7 @@ pub fn make_move(
     let undo = MoveUndo {
         from_index,
         to_index,
+        moved_piece,
         captured_piece,
         castling_rights: position.castling_rights,
         ep_square: position.ep_square,
@@ -260,16 +263,17 @@ pub fn make_move(
         let diff = from_index.abs_diff(to_index);
         if diff == 32 {
             let from_rank = rank(from_index);
+            let from_file = file(from_index);
             if from_rank == 1 {
-                position.ep_square = square_index(from_rank, 2);
+                position.ep_square = square_index(2, from_file);
             } else if from_rank == 6 {
-                position.ep_square = square_index(from_rank, 5);
+                position.ep_square = square_index(5, from_file);
             } else {
                 panic!("Weird e.p. square!");
             }
         }
 
-        if to_index == ep_square {
+        if ep_square != 0 && to_index == ep_square {
             let captured_pawn_square = if moved_piece_colour == WHITE {
                 to_index - 16
             } else {
@@ -282,7 +286,8 @@ pub fn make_move(
                     if colour != opposite_colour(moved_piece_colour)
                         || piece_type(captured_pawn) != PAWN
                     {
-                        panic!("Invalid e.p. capture piece");
+                        panic!("Invalid e.p. capture piece {:#?} {}, e.p. square {}, from {} to {}, cap square {}", 
+                            position, dbg_fen, ep_square, from_index, to_index, captured_pawn_square);
                     }
                     position.set_square_to_piece(captured_pawn_square, EMPTY);
                 }
@@ -294,20 +299,23 @@ pub fn make_move(
         }
 
         // Castling.
-        let diff = max(from_index, to_index) - min(from_index, to_index);
-        if diff == 2 {
+        if from_index.abs_diff(to_index) == 2 {
             let rook_square = if from_index < to_index {
                 H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
             } else {
                 A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
             };
             let rook = position.squares[rook_square];
-            if piece_colour(rook).unwrap() != moved_piece_colour || piece_type(rook) != ROOK {
+            if piece_colour(rook).unwrap() != moved_piece_colour {
+                panic!("Wrong piece colour: {:x} FEN: {}", rook_square, to_fen(position));
+            }
+            if piece_type(rook) != ROOK {
                 panic!("Not a rook");
             }
             let rook_to = (from_index + to_index) / 2; // Avoid negative numbers.
             position.squares[rook_to] = rook;
             position.squares[rook_square] = EMPTY;
+            position.castling_rights.remove(moved_piece_colour, None);
         }
 
         position.king_squares[moved_piece_colour as SquareIndex] = to_index;
@@ -323,11 +331,21 @@ pub fn make_move(
         }
     }
 
+    let opp_side_colour = opposite_colour(position.side_to_move);
+
+    // Test for rook captures and remove castling rights.
+    if captured_piece != EMPTY && piece_type(captured_piece) == ROOK {
+        if capture_square == A_ROOK_HOME_SQUARES[opp_side_colour as usize] {
+            position.castling_rights.remove(opp_side_colour, Some(BoardSide::Queenside));
+        } else if capture_square == H_ROOK_HOME_SQUARES[opp_side_colour as usize] {
+            position.castling_rights.remove(opp_side_colour, Some(BoardSide::Kingside));
+        }
+    }
+
     // Remove the e.p. capture if necessary.
     if is_enpassent {
         position.squares[capture_square] = EMPTY;
     }
-    
 
     // Reset the half move clock for pawn moves or captures.
     if captured_piece != EMPTY || is_pawn_move {
@@ -340,7 +358,7 @@ pub fn make_move(
         position.fullmove_number += 1;
     }
 
-    position.side_to_move = opposite_colour(position.side_to_move);
+    position.side_to_move = opp_side_colour;
 }
 
 pub fn undo_move(position: &mut Position) {
@@ -349,7 +367,8 @@ pub fn undo_move(position: &mut Position) {
     let undo = position.undo_stack.pop().unwrap();
 
     // En passent.
-    let is_enpassent = undo.to_index == undo.ep_square && piece_type(position.squares[undo.to_index]) == PAWN;
+    let is_enpassent =
+        undo.to_index == undo.ep_square && piece_type(position.squares[undo.to_index]) == PAWN;
     let mut capture_square = undo.to_index;
     if is_enpassent {
         capture_square = match undo.from_index < undo.to_index {
@@ -377,7 +396,13 @@ pub fn undo_move(position: &mut Position) {
         position.squares[rook_index] = EMPTY;
     }
 
-    position.squares[undo.from_index] = position.squares[undo.to_index];
+    if is_king_move {
+        position.king_squares[side_moved as usize] = undo.from_index;
+    }
+
+    // TODO: Deal with queening.
+
+    position.squares[undo.from_index] = undo.moved_piece;
 
     if is_enpassent {
         position.squares[undo.to_index] = EMPTY;
@@ -552,7 +577,7 @@ pub fn validate_long_algebraic_move(text: &str) -> bool {
 #[cfg(test)]
 mod test {
 
-    use crate::fen::STARTPOS_FEN;
+    use crate::{fen::STARTPOS_FEN, perft::{self, perft, divide}};
 
     use super::*;
 
@@ -657,6 +682,25 @@ mod test {
     }
 
     #[test]
+    fn test_make_move() {
+        let fen = "r3kbnr/2qn2p1/8/pppBpp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR w KQkq - 0 1";
+        let mut position = Position::default();
+        set_from_fen(&mut position, fen).unwrap();
+        make_move(&mut position, 0x43, 0x70, None);
+        assert_eq!(0b1110, position.castling_rights.flags);
+    }
+
+    #[test]
+    fn test_make_move2() {
+        let fen = "rn3b1r/1bqpp1k1/p7/2p2p1p/P2P4/2N1P1P1/1pK1NPP1/R3QB1R b - - 0 1";
+        let mut position = Position::default();
+        set_from_fen(&mut position, fen).unwrap();
+        make_move(&mut position, 17, 0, Some(KNIGHT));
+        undo_move(&mut position);
+        assert_eq!(fen, to_fen(&position));
+    }
+
+    #[test]
     fn test_undo_move() {
         let mut position = Position::default();
         set_startpos(&mut position);
@@ -672,4 +716,5 @@ mod test {
 
         // println!("{:#?}", position);
     }
+    
 }
