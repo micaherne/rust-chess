@@ -106,7 +106,7 @@ fn search_ab(
     if moves.len() == 0 {
         if side_to_move_in_check(position) {
             // Bigger for closer mates.
-            return depthleft as Score - CHECKMATE_SCORE_MAX;
+            return  - (depthleft as Score + CHECKMATE_SCORE_MAX);
         } else {
             return 0;
         }
@@ -175,6 +175,14 @@ mod test {
         let search_data = &mut SearchData::new(1, tx2, rx1);
         let mv = search(&mut pos, search_data);
         assert_eq!("c4e2", mv.text);
+
+        let mut pos: Position = "8/7p/8/2p3P1/3k3P/8/p6r/3K4 b - - 0 52".into();
+        let (_tx1, rx1) = mpsc::channel::<InputMessage>();
+        let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
+        // Search to depth 5 to ensure it's not going for longer mates.
+        let search_data = &mut SearchData::new(5, tx2, rx1);
+        let mv = search(&mut pos, search_data);
+        assert_eq!("a2a1q", mv.text);
     }
 
     #[test]
