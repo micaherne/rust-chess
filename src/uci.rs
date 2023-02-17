@@ -1,6 +1,8 @@
 use crate::{
     engine::Engine,
-    messages::{InputMessage, OutputMessage, AvailableOption, GoSubcommand, InfoMessage},
+    messages::{
+        AvailableOption, GoSubcommand, InfoMessage, InputMessage, OutputMessage, ScoreInfo,
+    },
     position0x88::notation::{make_moves, set_from_fen, set_startpos, LongAlgebraicNotationMove},
 };
 
@@ -18,6 +20,10 @@ pub struct UciOutputListener {
     pub receiver: Receiver<OutputMessage>,
 }
 
+trait ToUciString {
+    fn to_uci_string(&self) -> String;
+}
+
 impl UciOutputListener {
     pub fn listen(self) {
         loop {
@@ -25,7 +31,7 @@ impl UciOutputListener {
             match message {
                 Err(_) => println!("Error"),
                 Ok(OutputMessage::Quitting) => break,
-                Ok(m) => self.process_message(m)
+                Ok(m) => self.process_message(m),
             }
         }
     }
@@ -34,34 +40,31 @@ impl UciOutputListener {
         match message {
             OutputMessage::AvailableOptions(m) => self.process_available_options(m),
             OutputMessage::Ready => println!("readyok"),
-            OutputMessage::Quitting => {},
-            OutputMessage::BestMove(mv, ponder)  => println!("bestmove {}", mv.text),
-            OutputMessage::Info(info_messages) => {
-                let mut parts: Vec<String> = vec![];
-                for info_message in info_messages {
-                    let command_text = match info_message {
-                        InfoMessage::Depth(depth) => format!("depth {}", depth),
-                        InfoMessage::PrincipalVariation(moves) => {
-                            let move_string: Vec<String> = moves.iter().map(|m| m.text.to_string()).collect();
-                            format!("pv {}", move_string.join(" "))
-                        },
-                        _ => {
-                            format!("{}", "string not yet implemented")
-                        }
-                    };
-                    parts.push(command_text);
+            OutputMessage::Quitting => {}
+            OutputMessage::BestMove(mv, ponder) => {
+                if ponder.is_none() {
+                    println!("bestmove {}", mv.text)
+                } else {
+                    println!("bestmove {} ponder {}", mv.text, ponder.unwrap().text)
                 }
-
-                println!("info {}", parts.join(" "))
+                
             }
-            
+            OutputMessage::Info(info_messages) => {
+                let info_string = format!(
+                    "{}",
+                    info_messages
+                        .iter()
+                        .map(|m| m.to_uci_string())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                );
+                println!("info {}", info_string)
+            }
         }
     }
 
-    fn process_available_options(&self, options: Vec<AvailableOption>) {
-        for option in options {
-            
-        }
+    fn process_available_options(&self, _options: Vec<AvailableOption>) {
+        for _option in _options {}
     }
 }
 
@@ -160,11 +163,11 @@ impl UciInputListener {
         self.sender.send(InputMessage::IsReady).unwrap();
     }
 
-    fn process_setoption(&self, args: &mut VecDeque<&str>) {
+    fn process_setoption(&self, _args: &mut VecDeque<&str>) {
         todo!()
     }
 
-    fn process_register(&self, args: &mut VecDeque<&str>) {
+    fn process_register(&self, _args: &mut VecDeque<&str>) {
         todo!()
     }
 
@@ -222,8 +225,20 @@ impl UciInputListener {
     }
 
     fn process_go(&self, args: &mut VecDeque<&str>) {
-        let subcommand_tokens = ["searchmoves", "ponder", "wtime", "btime", "winc", "binc", "movestogo",
-        "depth", "nodes", "mate", "movetime", "infininte"];
+        let subcommand_tokens = [
+            "searchmoves",
+            "ponder",
+            "wtime",
+            "btime",
+            "winc",
+            "binc",
+            "movestogo",
+            "depth",
+            "nodes",
+            "mate",
+            "movetime",
+            "infininte",
+        ];
         let mut subcommands: Vec<GoSubcommand> = vec![];
         loop {
             let subcommand_name = args.pop_front();
@@ -240,7 +255,7 @@ impl UciInputListener {
                 break;
             }
 
-            let mut subcommand_params:Vec<&str> = vec![];
+            let mut subcommand_params: Vec<&str> = vec![];
 
             while let Some(arg) = args.pop_front() {
                 if subcommand_tokens.contains(&arg) {
@@ -257,27 +272,43 @@ impl UciInputListener {
                         moves.push(LongAlgebraicNotationMove::from_text(m.to_string()).unwrap());
                     }
                     subcommands.push(GoSubcommand::SearchMoves(moves));
-                },
+                }
                 "ponder" => subcommands.push(GoSubcommand::Ponder),
-                "wtime" => subcommands.push(GoSubcommand::WTime(subcommand_params[0].parse::<u64>().unwrap())),
-                "btime" => subcommands.push(GoSubcommand::BTime(subcommand_params[0].parse::<u64>().unwrap())),
-                "winc" => subcommands.push(GoSubcommand::WInc(subcommand_params[0].parse::<u64>().unwrap())),
-                "binc" => subcommands.push(GoSubcommand::BInc(subcommand_params[0].parse::<u64>().unwrap())),
-                "movestogo" => subcommands.push(GoSubcommand::MovesToGo(subcommand_params[0].parse::<u64>().unwrap())),
-                "depth" => subcommands.push(GoSubcommand::Depth(subcommand_params[0].parse::<u64>().unwrap())),
-                "nodes" => subcommands.push(GoSubcommand::Nodes(subcommand_params[0].parse::<u64>().unwrap())),
-                "mate" => subcommands.push(GoSubcommand::Mate(subcommand_params[0].parse::<u64>().unwrap())),
-                "movetime" => subcommands.push(GoSubcommand::MoveTime(subcommand_params[0].parse::<u64>().unwrap())),
+                "wtime" => subcommands.push(GoSubcommand::WTime(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "btime" => subcommands.push(GoSubcommand::BTime(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "winc" => subcommands.push(GoSubcommand::WInc(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "binc" => subcommands.push(GoSubcommand::BInc(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "movestogo" => subcommands.push(GoSubcommand::MovesToGo(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "depth" => subcommands.push(GoSubcommand::Depth(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "nodes" => subcommands.push(GoSubcommand::Nodes(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "mate" => subcommands.push(GoSubcommand::Mate(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
+                "movetime" => subcommands.push(GoSubcommand::MoveTime(
+                    subcommand_params[0].parse::<u64>().unwrap(),
+                )),
                 "infinite" => subcommands.push(GoSubcommand::Infinite),
                 _ => {}
             }
-
         }
 
         let message: InputMessage = InputMessage::Go(subcommands);
 
         self.sender.send(message).unwrap();
-
     }
 
     fn process_stop(&self) {
@@ -454,6 +485,55 @@ impl UciInterface {
                 "quit" => break,
                 other => self.process_command(other),
             }
+        }
+    }
+}
+
+impl ToUciString for InfoMessage {
+    fn to_uci_string(&self) -> String {
+        match self {
+            InfoMessage::Depth(x) => format!("depth {}", x),
+            InfoMessage::SelectiveDepth(x) => format!("seldepth {}", x),
+            InfoMessage::TimeSearched(x) => format!("time {}", x),
+            InfoMessage::NodesSearched(x) => format!("nodes {}", x),
+            InfoMessage::PrincipalVariation(pv) => format!(
+                "pv {}",
+                pv.iter()
+                    .map(|m| m.text.to_string())
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            ),
+            InfoMessage::Score(score_info) => format!(
+                "score {}",
+                score_info
+                    .iter()
+                    .map(|m| m.to_uci_string())
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            ),
+            InfoMessage::CurrentMove(x) => {
+                let mv: LongAlgebraicNotationMove = x.into();
+                format!("currmove {}", mv.text)
+            }
+            InfoMessage::CurrentMoveNumber(x) => format!("currmove {}", x),
+            InfoMessage::HashFull(x) => format!("hashfull {}", x),
+            InfoMessage::NodesPerSecond(x) => format!("nps {}", x),
+            InfoMessage::TablebaseHits(x) => format!("tbhits {}", x),
+            InfoMessage::CpuLoad(x) => format!("cpuload {}", x),
+            InfoMessage::String(x) => format!("string {}", x),
+            InfoMessage::Refutation(_, _) => todo!(),
+            InfoMessage::CurrentLine(_, _) => todo!(),
+        }
+    }
+}
+
+impl ToUciString for ScoreInfo {
+    fn to_uci_string(&self) -> String {
+        match self {
+            ScoreInfo::Centipawns(x) => format!("cp {}", x),
+            ScoreInfo::Mate(x) => format!("mate {}", x),
+            ScoreInfo::LowerBound => "lowerbound".to_string(),
+            ScoreInfo::UpperBound => "upperbound".to_string(),
         }
     }
 }

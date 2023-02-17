@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    messages::{GoSubcommand, InfoMessage, InputMessage, OutputMessage},
+    messages::{GoSubcommand, InfoMessage, InputMessage, OutputMessage, ScoreInfo},
     position0x88::{
         evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
         movegen::{generate_moves, side_to_move_in_check, Move},
@@ -22,7 +22,7 @@ pub struct SearchData {
     search_depth: Depth,
     pv: Line,
     sender: Sender<OutputMessage>,
-    receiver: Receiver<InputMessage>,
+    _receiver: Receiver<InputMessage>,
 }
 
 impl SearchData {
@@ -35,14 +35,14 @@ impl SearchData {
             search_depth: depth,
             pv: vec![],
             sender,
-            receiver,
+            _receiver: receiver,
         }
     }
 }
 
 pub fn start_search_thread(
     position: Position,
-    commands: &[GoSubcommand],
+    _commands: &[GoSubcommand],
     output_sender: Sender<OutputMessage>,
     input_receiver: Receiver<InputMessage>,
 ) {
@@ -144,12 +144,15 @@ fn search_ab(
                 // Pull it into the search data.
                 search_data.pv = pline.iter().map(|m| m.to_owned()).collect();
 
+                let score = InfoMessage::Score(vec![
+                    ScoreInfo::Centipawns(move_score)
+                ]);
                 // Send it to the output.
                 search_data
                     .sender
                     .send(OutputMessage::Info(vec![InfoMessage::PrincipalVariation(
                         pv_algebraic,
-                    )]))
+                    ), score]))
                     .unwrap();
             }
         }

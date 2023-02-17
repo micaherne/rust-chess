@@ -1,6 +1,6 @@
 use crate::position0x88::{Position, piece_colour, movegen::PIECE_TYPES_COUNT};
 
-use super::{piece_type, EMPTY, movegen::{side_to_move_in_check, can_evade_check}, SquareIndex, file, rank, WHITE, KING, square_iter};
+use super::{piece_type, EMPTY, movegen::{side_to_move_in_check, can_evade_check}, SquareIndex, file, rank, WHITE, KING, square_iter, PAWN, KNIGHT, BISHOP, ROOK, QUEEN};
 
 pub type Score = i32;
 
@@ -10,6 +10,10 @@ pub const CHECKMATE_SCORE_MAX: Score = 20000;
 
 const MIDDLEGAME: usize = 0;
 const ENDGAME: usize = 1;
+
+const PHASE: [i32;PIECE_TYPES_COUNT] = [0, 0, 1, 1, 2, 4, 0];
+const TOTAL_PHASE: i32 = PHASE[PAWN as usize] * 16 + PHASE[KNIGHT as usize] * 4 
++ PHASE[BISHOP as usize] * 4 + PHASE[ROOK as usize] * 4 + PHASE[QUEEN as usize] * 2;
 
 // TODO: This should be more sensible. It's basically just a fudge to use piece square tables
 // from https://www.chessprogramming.org/Simplified_Evaluation_Function without having to 
@@ -101,12 +105,24 @@ fn piece_square_index_rev(index0x88: SquareIndex) -> SquareIndex {
     (rank(index0x88) * 8 + file(index0x88)) as SquareIndex
 }
 
+fn game_phase(position: &Position) -> i32 {
+    let mut phase = TOTAL_PHASE;
+    for sq in square_iter() {
+        let piece_type = piece_type(position.squares[sq]);
+        phase -= PHASE[piece_type as usize];
+    }
+    (phase * 256 + (TOTAL_PHASE / 2)) / TOTAL_PHASE
+}
+
 /// Piece values in centipawns.
 pub const PIECE_VALUES: [Score; PIECE_TYPES_COUNT] = [0, 100, 500, 300, 325, 900, 2_000_000];
 
 pub fn evaluate(position: &Position) -> Score {
 
-    let mut result: Score = 0;
+    let mut middlegame_score: Score = 0;
+    let mut endgame_score: Score = 0;
+
+    let phase = game_phase(position);
 
     if side_to_move_in_check(position) {
         if !can_evade_check(position) {
@@ -126,9 +142,11 @@ pub fn evaluate(position: &Position) -> Score {
         
         let colour = piece_colour(piece).unwrap();
         if colour == position.side_to_move {
-            result += PIECE_VALUES[piece_type as usize] as Score;
+            middlegame_score += PIECE_VALUES[piece_type as usize] as Score;
+            endgame_score += PIECE_VALUES[piece_type as usize] as Score;
         } else {
-            result -= PIECE_VALUES[piece_type as usize] as Score;
+            middlegame_score -= PIECE_VALUES[piece_type as usize] as Score;
+            endgame_score -= PIECE_VALUES[piece_type as usize] as Score;
         }
 
         // Reverse the index if it's black (for pawns and king).
@@ -138,27 +156,35 @@ pub fn evaluate(position: &Position) -> Score {
             piece_square_index_rev(piece_square)
         };
 
-        let table: PieceSquareTable;
+        let mtable: PieceSquareTable;
+        let etable: PieceSquareTable;
         if piece_type == KING {
             // TODO: This needs to take account of the game phase - currently just using the middlegame one.
-            table = KING_PIECE_SQUARE_TABLE[MIDDLEGAME];
+            mtable = KING_PIECE_SQUARE_TABLE[MIDDLEGAME];
+            etable = KING_PIECE_SQUARE_TABLE[ENDGAME];
         } else {
-            table = PIECE_SQUARE_TABLE[piece_type as usize];
+            mtable = PIECE_SQUARE_TABLE[piece_type as usize];
+            etable = PIECE_SQUARE_TABLE[piece_type as usize];
         }
 
         if colour == position.side_to_move {
-            result += table[piece_square_table_index];
+            middlegame_score += mtable[piece_square_table_index];
+            endgame_score += etable[piece_square_table_index];
         } else {
-            result -= table[piece_square_table_index];
+            middlegame_score -= mtable[piece_square_table_index];
+            endgame_score -= etable[piece_square_table_index];
         }
 
     }
 
-    result
+    ((middlegame_score * (256 - phase)) + (endgame_score * phase)) / 256
+    
 }
 
 #[cfg(test)]
 mod test {
+    use crate::fen::STARTPOS_FEN;
+
     use super::*;
 
     #[test]
@@ -175,5 +201,13 @@ mod test {
         assert_eq!(57, piece_square_index_rev(0x71));
         assert_eq!(0, piece_square_index_rev(0x00));
         assert_eq!(7, piece_square_index_rev(0x07));
+    }
+
+    #[test]
+    fn test_game_phase() {
+        let pos: Position = STARTPOS_FEN.into();
+        assert_eq!(0, game_phase(&pos));
+        let pos: Position = "8/8/5k2/8/K7/8/8/8 w - - 0 1".into();
+        assert_eq!(256, game_phase(&pos));
     }
 }

@@ -1,4 +1,4 @@
-use crate::position0x88::{notation::LongAlgebraicNotationMove, movegen::Move};
+use crate::position0x88::{notation::LongAlgebraicNotationMove, movegen::Move, evaluate::Score};
 
 pub enum InputMessage {
     Quit,
@@ -42,7 +42,7 @@ pub enum InfoMessage {
 }
 
 pub enum ScoreInfo {
-    Centipawns(usize), 
+    Centipawns(Score), 
     Mate(usize),
     LowerBound,
     UpperBound
