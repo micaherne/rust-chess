@@ -7,7 +7,7 @@ use crate::{
 use std::{
     collections::VecDeque,
     io,
-    sync::mpsc::{Receiver, Sender}, any::Any,
+    sync::mpsc::{Receiver, Sender},
 };
 
 pub struct UciInputListener {

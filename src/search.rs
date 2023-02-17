@@ -15,10 +15,6 @@ use crate::{
 
 pub type Depth = i16;
 
-struct SearchTree {
-    position: Position,
-}
-
 type Line = Vec<Move>;
 
 #[derive(Debug)]

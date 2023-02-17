@@ -4,7 +4,7 @@ use super::{
     file,
     notation::{piece_type_to_char, square_index_to_str, LongAlgebraicNotationMove, KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
-    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK,
+    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, square_iter,
 };
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
@@ -75,11 +75,8 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 
     // Check evasions are filtered out at the end.
 
-    for piece_square in 0..=0x77 {
-        if piece_square & 0x88 != 0 {
-            continue;
-        }
-
+    for piece_square in square_iter() {
+        
         let piece = position.squares[piece_square];
 
         if piece == EMPTY {
@@ -660,7 +657,7 @@ pub fn create_sliding_moves(
         let mut next_square = piece_square as i16;
         loop {
             next_square += dir;
-            if next_square < 0 || next_square & 0x88 != 0 {
+            if !is_valid_square(next_square) {
                 break;
             }
 
@@ -968,7 +965,7 @@ pub fn can_slide_in_direction(piece_type: PieceType, direction: Direction) -> bo
 /// be negative.
 #[inline]
 pub const fn is_valid_square(square: i16) -> bool {
-    square >= 0 && (square & 0x88 == 0)
+    !(square < 0 || (square & 0x88 != 0))
 }
 
 pub fn next_piece_in_direction(

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use self::notation::piece_to_char;
+use self::{notation::piece_to_char};
 
 pub mod evaluate;
 pub mod movegen;
@@ -187,7 +187,32 @@ pub fn piece_colour(piece: Piece) -> Option<Colour> {
 
 #[inline]
 pub fn opposite_colour(colour: Colour) -> Colour {
-    1 - colour
+    colour ^ 1
+}
+
+#[derive(Default)]
+pub struct SquareIterator {
+    current: SquareIndex,
+}
+
+impl Iterator for SquareIterator {
+    type Item = SquareIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current & 0x88 != 0 {
+            if self.current > 0x77 {
+                return None;
+            }
+            self.current += 8;
+        }
+        let result = Some(self.current);
+        self.current += 1;
+        result
+    }
+}
+
+pub fn square_iter() -> SquareIterator {
+    SquareIterator::default()
 }
 
 #[cfg(test)]
@@ -257,5 +282,16 @@ mod test {
 
         let castling2 = CastlingRights { flags: 0b1011 };
         assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
+    }
+
+    #[test]
+    fn test_square_iterator() {
+        let mut iterator1 = SquareIterator { current: 0x08 };
+        assert_eq!(0x10, iterator1.next().unwrap());
+        let mut i = 0;
+        for _ in square_iter() {
+            i += 1;
+        }
+        assert_eq!(64, i);
     }
 }

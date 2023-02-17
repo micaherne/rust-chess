@@ -1,6 +1,6 @@
 use crate::position0x88::{Position, piece_colour, movegen::PIECE_TYPES_COUNT};
 
-use super::{piece_type, EMPTY, movegen::{side_to_move_in_check, can_evade_check}, SquareIndex, file, rank, WHITE, KING};
+use super::{piece_type, EMPTY, movegen::{side_to_move_in_check, can_evade_check}, SquareIndex, file, rank, WHITE, KING, square_iter};
 
 pub type Score = i32;
 
@@ -101,7 +101,6 @@ fn piece_square_index_rev(index0x88: SquareIndex) -> SquareIndex {
     (rank(index0x88) * 8 + file(index0x88)) as SquareIndex
 }
 
-
 /// Piece values in centipawns.
 pub const PIECE_VALUES: [Score; PIECE_TYPES_COUNT] = [0, 100, 500, 300, 325, 900, 2_000_000];
 
@@ -116,10 +115,8 @@ pub fn evaluate(position: &Position) -> Score {
     }
 
     // Evaluate material.
-    for piece_square in 0..=0x77 {
-        if piece_square & 0x88 != 0 {
-            continue;
-        }
+    for piece_square in square_iter() {
+
         let piece = position.squares[piece_square];
         let piece_type = piece_type(piece);
         if piece_type == EMPTY {
@@ -134,18 +131,25 @@ pub fn evaluate(position: &Position) -> Score {
             result -= PIECE_VALUES[piece_type as usize] as Score;
         }
 
+        // Reverse the index if it's black (for pawns and king).
         let piece_square_table_index = if colour == WHITE {
             piece_square_index(piece_square)
         } else {
             piece_square_index_rev(piece_square)
         };
 
-        if piece_type != KING {
-            if colour == position.side_to_move {
-                result += PIECE_SQUARE_TABLE[piece_type as usize][piece_square_table_index];
-            } else {
-                result -= PIECE_SQUARE_TABLE[piece_type as usize][piece_square_table_index];
-            }
+        let table: PieceSquareTable;
+        if piece_type == KING {
+            // TODO: This needs to take account of the game phase - currently just using the middlegame one.
+            table = KING_PIECE_SQUARE_TABLE[MIDDLEGAME];
+        } else {
+            table = PIECE_SQUARE_TABLE[piece_type as usize];
+        }
+
+        if colour == position.side_to_move {
+            result += table[piece_square_table_index];
+        } else {
+            result -= table[piece_square_table_index];
         }
 
     }
