@@ -139,7 +139,7 @@ impl UciInputListener {
     }
 
     fn process_uci(&self) {
-        println!("id name Unidexter-R");
+        println!("id name Dexy");
         println!("id author Michael Aherne");
         // TODO: send options.
         println!("uciok")
