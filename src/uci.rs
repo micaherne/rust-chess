@@ -1,13 +1,13 @@
 use crate::{
     engine::Engine,
-    messages::{InputMessage, OutputMessage, AvailableOption, GoSubcommand},
+    messages::{InputMessage, OutputMessage, AvailableOption, GoSubcommand, InfoMessage},
     position0x88::notation::{make_moves, set_from_fen, set_startpos, LongAlgebraicNotationMove},
 };
 
 use std::{
     collections::VecDeque,
     io,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{Receiver, Sender}, any::Any,
 };
 
 pub struct UciInputListener {
@@ -36,6 +36,25 @@ impl UciOutputListener {
             OutputMessage::Ready => println!("readyok"),
             OutputMessage::Quitting => {},
             OutputMessage::BestMove(mv, ponder)  => println!("bestmove {}", mv.text),
+            OutputMessage::Info(info_messages) => {
+                let mut parts: Vec<String> = vec![];
+                for info_message in info_messages {
+                    let command_text = match info_message {
+                        InfoMessage::Depth(depth) => format!("depth {}", depth),
+                        InfoMessage::PrincipalVariation(moves) => {
+                            let move_string: Vec<String> = moves.iter().map(|m| m.text.to_string()).collect();
+                            format!("pv {}", move_string.join(" "))
+                        },
+                        _ => {
+                            format!("{}", "string not yet implemented")
+                        }
+                    };
+                    parts.push(command_text);
+                }
+
+                println!("info {}", parts.join(" "))
+            }
+            
         }
     }
 
@@ -262,7 +281,7 @@ impl UciInputListener {
     }
 
     fn process_stop(&self) {
-        todo!()
+        self.sender.send(InputMessage::Stop(true)).unwrap();
     }
 
     fn process_ponderhit(&self) {

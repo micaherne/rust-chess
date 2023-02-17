@@ -1,14 +1,15 @@
 use std::{
     collections::HashMap,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, self},
 };
 
 use crate::{
     messages::{InputMessage, OutputMessage},
     position0x88::{
-        notation::{set_from_fen, set_startpos, LongAlgebraicNotationMove, make_moves},
-        Position, movegen::generate_moves,
+        notation::{make_moves, set_from_fen, set_startpos},
+        MoveUndo, Position,
     },
+    search::start_search_thread,
 };
 
 pub struct Engine {
@@ -17,6 +18,7 @@ pub struct Engine {
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
+    undo_stack: Vec<MoveUndo>,
 }
 
 struct EngineOptions {
@@ -35,6 +37,7 @@ impl Engine {
             initialised: false,
             receiver,
             sender,
+            undo_stack: vec![],
         };
     }
 
@@ -56,6 +59,8 @@ impl Engine {
     }
 
     pub fn listen(&mut self) {
+        // Sender for input messages into the search thread.
+        let mut input_sender: Option<Sender<InputMessage>> = None;
         loop {
             // If anything goes wrong with the messaging we just quit.
             let message = self.receiver.recv().unwrap_or(InputMessage::Quit);
@@ -68,7 +73,9 @@ impl Engine {
                 InputMessage::SetPositionFromFen(fen) => {
                     set_from_fen(&mut self.position, &fen).unwrap()
                 }
-                InputMessage::MakeMoves(moves) => make_moves(&mut self.position, &moves),
+                InputMessage::MakeMoves(moves) => {
+                    self.undo_stack = make_moves(&mut self.position, &moves)
+                }
                 InputMessage::GetAvailableOptions => self
                     .sender
                     .send(OutputMessage::AvailableOptions(vec![]))
@@ -77,11 +84,37 @@ impl Engine {
                 InputMessage::SetDebug(value) => self.set_option_debug(value),
                 InputMessage::NewGame => {
                     // TODO: Clear caches and stuff.
-                },
+                }
                 InputMessage::Go(subcommands) => {
-                    let moves = generate_moves(&self.position);
-                    let alg_move: LongAlgebraicNotationMove = moves.get(0).unwrap().into();
-                    self.sender.send(OutputMessage::BestMove(alg_move, None)).unwrap();
+                    // Stop any existing thread.
+                    if input_sender.is_some() {
+                        let sender = input_sender.take().unwrap();
+                        let send_result = sender.send(InputMessage::Stop(false));
+                        if send_result.is_ok() {
+                            // Do what?
+                        }
+                    }
+
+                    // For output back to the UCI thread.
+                    let (tx, rx) = mpsc::channel();
+                    input_sender = Some(tx);
+                    let output_sender = self.sender.clone();
+                    Some(start_search_thread(
+                        self.position,
+                        &subcommands,
+                        output_sender,
+                        rx
+                    ));
+                }
+                InputMessage::Stop(to_send) => {
+                    if input_sender.is_some() {
+                        let sender = input_sender.take().unwrap();
+                        let res = sender.send(InputMessage::Stop(to_send));
+                        if !res.is_ok() {
+                            #[cfg(debug_assertions)]
+                            println!("Error sending stop message");
+                        }
+                    }
                 }
             }
         }

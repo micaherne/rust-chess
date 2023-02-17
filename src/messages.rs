@@ -1,4 +1,4 @@
-use crate::position0x88::notation::LongAlgebraicNotationMove;
+use crate::position0x88::{notation::LongAlgebraicNotationMove, movegen::Move};
 
 pub enum InputMessage {
     Quit,
@@ -9,14 +9,43 @@ pub enum InputMessage {
     GetAvailableOptions,
     IsReady,
     NewGame,
-    Go(Vec<GoSubcommand>)
+    Go(Vec<GoSubcommand>),
+    Stop(bool) // argument is whether to send the best move or not
 }
 
 pub enum OutputMessage {
     AvailableOptions(Vec<AvailableOption>),
     Ready,
     Quitting,
-    BestMove(LongAlgebraicNotationMove, Option<LongAlgebraicNotationMove>)
+    BestMove(LongAlgebraicNotationMove, Option<LongAlgebraicNotationMove>),
+    Info(Vec<InfoMessage>)
+}
+
+pub enum InfoMessage {
+    Depth(usize),
+    SelectiveDepth(usize),
+    TimeSearched(usize),
+    NodesSearched(usize),
+    PrincipalVariation(Vec<LongAlgebraicNotationMove>),
+    // What is multipv?
+    Score(Vec<ScoreInfo>),
+    CurrentMove(Move),
+    CurrentMoveNumber(usize),
+    HashFull(usize), // What is this?
+    NodesPerSecond(usize),
+    TablebaseHits(usize),
+    // Do we need sbhits - Shredder database?
+    CpuLoad(usize),
+    String(String),
+    Refutation(Move, Vec<Move>),
+    CurrentLine(usize, Vec<Move>)
+}
+
+pub enum ScoreInfo {
+    Centipawns(usize), 
+    Mate(usize),
+    LowerBound,
+    UpperBound
 }
 
 pub enum GoSubcommand {

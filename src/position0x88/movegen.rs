@@ -9,6 +9,8 @@ use super::{
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
 
+pub type SquareAndPiece = (SquareIndex, Piece);
+
 pub const PIECE_TYPES_COUNT: usize = 7;
 const MAX_DIRECTIONS_COUNT: usize = 8;
 
@@ -34,8 +36,7 @@ const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
-#[derive(Debug, Clone, Copy)]
-pub struct Move {
+#[derive(Debug, Default, Clone, Copy)]pub struct Move {
     pub from_index: SquareIndex,
     pub to_index: SquareIndex,
     pub queening_piece: Option<Piece>,
@@ -242,6 +243,7 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
     result
 }
 
+
 /// Test for the capture pawn being pinned against the king in an en passent capture.
 /// This does not check if the position is en passent so should only be called when we already know it is.
 fn is_en_passent_pin(position: &Position, capturing_pawn_square: SquareIndex) -> bool {
@@ -444,10 +446,11 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
     result
 }
 
+/// Find pieces attacking the piece on the given square.
 fn attackers_of_square(
     position: &Position,
     piece_square: SquareIndex,
-) -> Vec<(SquareIndex, Piece)> {
+) -> Vec<SquareAndPiece> {
     let mut result = vec![];
     let opt_piece_colour = piece_colour(position.squares[piece_square]);
     if opt_piece_colour == None {
@@ -473,7 +476,8 @@ fn attackers_of_square(
         // Presumably pawn attacks are checked elsewhere.
         if piece_type == PAWN {
             continue;
-        } 
+        }
+
         if PIECE_DIRECTIONS[piece_type as usize].contains(&dir) {
             result.push(possible_attacker);
         }
@@ -759,6 +763,156 @@ pub fn side_to_move_in_check(position: &Position) -> bool {
     )
 }
 
+/// Can check be evaded? Along with side_to_move_in_check() this determines checkmate.
+pub fn can_evade_check(position: &Position) -> bool {
+    debug_assert!(side_to_move_in_check(position));
+
+    let king_square = position.king_squares[position.side_to_move as usize];
+
+    // First check for legal moves / captures.
+    for mut dir in PIECE_DIRECTIONS[KING as usize] {
+        if dir == 0 {
+            break;
+        }
+        if position.side_to_move == BLACK {
+            dir = -dir;
+        }
+        let to_square = king_square as i16 + dir;
+        if !is_valid_square(to_square) {
+            continue;
+        }
+        if position.squares[to_square as SquareIndex] == EMPTY {
+            if !is_square_attacked(&position, to_square as SquareIndex, position.side_to_move, None) {
+                return true;
+            } else {
+                continue;
+            }
+        } else {
+            let piece_colour = piece_colour(position.squares[to_square as SquareIndex]).unwrap();
+            // Blocked by own piece.
+            if piece_colour == position.side_to_move {
+                continue;
+            }
+            // Can capture the piece.
+            if !is_square_attacked(&position, to_square as SquareIndex, position.side_to_move, None) {
+                return true;
+            }
+        }
+    }
+
+    // Check for capturing checking piece.
+    let checking_pieces = attackers_of_square(&position, king_square);
+    
+    debug_assert!(checking_pieces.len() != 0);
+
+    // Make sure it's not double check.
+    if checking_pieces.len() > 1 {
+        return false;
+    }
+
+    let (checking_piece_square, checking_piece) = checking_pieces[0];
+    
+    let attackers = attackers_of_square(&position, checking_piece_square);
+
+    for (attacker_square, _attacking_piece) in attackers {
+        if attacker_square == king_square {
+            // We have already checked the king can't capture any of the pieces around it.
+            continue;
+        }
+        let pin_dir = pinned_against_king_direction(&position, attacker_square);
+        match pin_dir {
+            None => {return true; },
+            Some(dir) => {
+                let check_dir = direction(checking_piece_square, king_square);
+                match check_dir {
+                    None => continue,
+                    Some(d) => {
+                        if dir != d {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for interjections.
+    let checking_piece_type = piece_type(checking_piece);
+    if !is_sliding_piece(checking_piece_type) {
+        return false;
+    }
+    let opt_direction_from_king = direction(king_square, checking_piece_square);
+
+    debug_assert!(opt_direction_from_king.is_some());
+
+    let direction_from_king = opt_direction_from_king.unwrap();
+
+    let mut interject_square = king_square as i16;
+
+    while interject_square != checking_piece_square as i16 {
+        debug_assert!(is_valid_square(interject_square as i16));
+
+        interject_square += direction_from_king;
+
+        if interject_square as usize == position.ep_square {
+            for dir in PAWN_CAPTURE_DIRECTIONS[position.side_to_move as usize] {
+                // Minus is because we're looking for the source from the target.
+                let poss_pawn_square = interject_square - dir;
+                if !is_valid_square(poss_pawn_square) {
+                    continue;
+                }
+                let poss_piece = position.squares[poss_pawn_square as usize];
+                if piece_type(poss_piece) == PAWN 
+                    && piece_colour(poss_piece).unwrap() == position.side_to_move {
+                        return true;
+                    }
+            }
+        }
+
+        // Can't use is_square_attacked() as-is as it uses pawn attacks not moves, and we need
+        // moves here.
+
+        for (the_piece_type, piece_dirs) in PIECE_DIRECTIONS.iter().enumerate() {
+            let pt = the_piece_type as PieceType;
+            if [EMPTY, KING].contains(&pt) {
+                continue;
+            }
+            for dir in piece_dirs {
+                if *dir == 0i16 {
+                    break;
+                }
+                for i in 1..8 {
+                    let test_square = interject_square as Direction + i * dir;
+                    if !is_valid_square(test_square) {
+                        break;
+                    }
+                    let piece = position.squares[test_square as usize];
+                    if piece == EMPTY {
+                        continue;
+                    }
+                    if piece_colour(piece).unwrap() != position.side_to_move {
+                        break;
+                    }
+                    if the_piece_type == piece_type(piece).into() {
+                        if pinned_against_king_direction(&position, test_square as usize).is_some() {
+                            break;
+                        }
+                        return true;
+                    }
+                }
+            }
+        }
+
+    }
+
+    // DON'T FORGET - if a slider check is through the e.p. square, a pawn capture could block it!
+    // (They can't any other time as the captured piece would block the check anyway)
+
+    // todo!("This still needs to check for interjections");
+
+    false
+}
+
 pub fn is_sliding_piece(piece_type: PieceType) -> bool {
     return piece_type == QUEEN || piece_type == ROOK || piece_type == BISHOP;
 }
@@ -813,7 +967,7 @@ pub fn can_slide_in_direction(piece_type: PieceType, direction: Direction) -> bo
 /// Note that this is an i16, not a SquareIndex, as it may have been calculated and could
 /// be negative.
 #[inline]
-pub fn is_valid_square(square: i16) -> bool {
+pub const fn is_valid_square(square: i16) -> bool {
     square >= 0 && (square & 0x88 == 0)
 }
 
@@ -976,6 +1130,48 @@ mod test {
     }
 
     #[test]
+    fn test_can_evade_check() {
+        let pos: Position = "5k2/8/8/8/7b/1N6/5q2/5K2 w - - 0 1".into();
+        assert!(!can_evade_check(&pos));
+        let pos: Position = "5k2/8/8/8/5q1b/1N6/8/5K2 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+        let pos: Position = "5k2/8/8/6r1/7b/1N6/4q3/5K2 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+
+        // Can take the checking piece.
+        let pos: Position = "5k2/8/8/8/7b/3N4/5q2/5K2 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+
+        // Double check.
+        let pos: Position = "5k2/8/8/1bN2qr1/8/8/8/r2Q1K2 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+        let pos: Position = "5k2/8/8/1bN2qr1/8/8/8/r3QK2 w - - 0 1".into();
+        assert!(!can_evade_check(&pos));
+        let pos: Position = "5k2/8/8/1b3qr1/8/8/8/r3QK2 w - - 0 1".into();
+        assert!(!can_evade_check(&pos));
+
+        // Interjection.
+        let pos: Position = "5k2/8/8/5qr1/8/8/4P3/r2NQK2 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+        let pos: Position = "5k2/8/8/5qr1/8/8/4P3/r3QK2 w - - 0 1".into();
+        assert!(!can_evade_check(&pos));
+        let pos: Position = "5k2/8/7Q/5qr1/8/8/4P3/3N1K2 b - - 0 1".into();
+        assert!(can_evade_check(&pos));
+
+        // Pawn interjection 
+        let pos: Position = "4qk2/8/8/P1P5/KB6/RN6/8/8 w - - 0 1".into();
+        assert!(can_evade_check(&pos));
+        let pos: Position = "8/4rbr1/4pkp1/5pp1/8/8/1B6/1K6 b - - 0 1".into();
+        assert!(can_evade_check(&pos));
+
+        // Interjection of e.p. capture.
+        let pos: Position = "4qk2/8/8/P1pP4/KB6/RN6/8/8 w - c6 0 1".into();
+        assert!(can_evade_check(&pos));
+        
+        
+    }
+
+    #[test]
     fn test_ep_pin() {
         let mut pos = Position::default();
         let fen = "8/5K2/8/3pP3/8/8/b4k2/8 w - d6 0 1";
@@ -1065,6 +1261,7 @@ mod test {
 
         }
     }
+
 
 
 }

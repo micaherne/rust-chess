@@ -18,6 +18,14 @@ pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
 pub const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
 pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
 
+impl From<&str> for Position {
+    fn from(value: &str) -> Self {
+        let mut pos = Position::default();
+        set_from_fen(&mut pos, value).unwrap();
+        pos
+    }
+}
+
 pub fn to_fen(position: &Position) -> String {
     let mut result = String::new();
     for line_start in (0..8).rev() {
@@ -428,7 +436,7 @@ pub fn undo_move(position: &mut Position, undo: MoveUndo) {
     position.side_to_move = side_moved;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LongAlgebraicNotationMove {
     pub text: String,
 }
