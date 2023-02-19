@@ -144,9 +144,11 @@ fn search_ab(
                 // Pull it into the search data.
                 search_data.pv = pline.iter().map(|m| m.to_owned()).collect();
 
+                // TODO: This should negate the score if black is to move I think.
                 let score = InfoMessage::Score(vec![
                     ScoreInfo::Centipawns(move_score)
                 ]);
+
                 // Send it to the output.
                 search_data
                     .sender
