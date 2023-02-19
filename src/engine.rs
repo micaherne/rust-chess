@@ -17,7 +17,7 @@ pub struct Engine {
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
-    undo_stack: Vec<MoveUndo>,
+    undo_stack: Vec<MoveUndo>
 }
 
 struct EngineOptions {

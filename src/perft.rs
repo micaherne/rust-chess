@@ -53,6 +53,9 @@ pub fn divide(position: &mut Position, depth: u16) -> DivideResults {
         #[cfg(debug_assertions)]
         let before_fen = to_fen(position);
 
+        #[cfg(debug_assertions)]
+        let before_hash = position.hash_key();
+
         let undo = make_move(position, m.from_index, m.to_index, m.queening_piece);
         let nodes = perft(position, depth - 1);
         total += nodes;
@@ -67,6 +70,15 @@ pub fn divide(position: &mut Position, depth: u16) -> DivideResults {
                     square_index_to_str(m.from_index),
                     square_index_to_str(m.to_index),
                     before_fen, after_fen
+                );
+            }
+
+            let after_hash = position.hash_key();
+            if before_hash != after_hash {
+                panic!("Move: {}{}, before: {}, after: {}",
+                    square_index_to_str(m.from_index),
+                    square_index_to_str(m.to_index),
+                    before_hash, after_hash
                 );
             }
         }

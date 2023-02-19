@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::transposition::{ZobristNumbers, ZobristNumber};
+
 use self::{notation::piece_to_char};
 
 pub mod evaluate;
@@ -42,15 +44,76 @@ pub struct Position {
     ep_square: SquareIndex,
     halfmove_clock: u32,
     fullmove_number: u32,
+    zobrist_numbers: ZobristNumbers,
+    hash_key: ZobristNumber
 }
 
 impl Position {
     pub fn set_square_to_piece(&mut self, square: SquareIndex, piece: Piece) {
+        let new_piece_type = piece_type(piece);
+        let current_piece_type = piece_type(self.squares[square]);
+
+        let square_index = index0x88to64(square);
+
+        self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_type as usize][square_index as usize];
+        self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_type as usize][square_index as usize];
+
         self.squares[square] = piece;
-        if piece_type(piece) == KING {
+        if new_piece_type == KING {
             self.king_squares[piece_colour(piece).unwrap() as usize] = square;
         }
     }
+
+    pub fn remove_from_square(&mut self, square: SquareIndex) {
+        self.set_square_to_piece(square, EMPTY);
+    }
+
+    pub fn set_ep_square(&mut self, square: SquareIndex) {
+        if self.ep_square != 0 {
+            self.hash_key ^= self.zobrist_numbers.ep_file[file(self.ep_square) as usize];
+        }
+        if square != 0 {
+            self.hash_key ^= self.zobrist_numbers.ep_file[file(square) as usize];
+        }
+        self.ep_square = square;
+    }
+
+    pub fn set_side_to_move(&mut self, colour: Colour) {
+        if colour == self.side_to_move {
+            return;
+        }
+        self.side_to_move = colour;
+    }
+
+    // This is mainly due to bad design - we need to update the hash.
+    pub fn castling_allow(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let pre = self.castling_rights.flags;
+        self.castling_rights.allow(colour, side);
+        let post = self.castling_rights.flags;
+        let mut changed = pre & !post & 0xF;
+        while changed != 0 {
+            let bit = changed.trailing_zeros();
+            self.hash_key ^= self.zobrist_numbers.castling_rights[bit as usize];
+            changed ^= 1 << bit;
+        }
+    }
+
+    pub fn castling_remove(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let pre = self.castling_rights.flags;
+        self.castling_rights.remove(colour, side);
+        let post = self.castling_rights.flags;
+        let mut changed = pre & !post & 0xF;
+        while changed != 0 {
+            let bit = changed.trailing_zeros();
+            self.hash_key ^= self.zobrist_numbers.castling_rights[bit as usize];
+            changed ^= 1 << bit;
+        }
+    }
+
+    pub fn hash_key(&self) -> ZobristNumber {
+        self.hash_key
+    }
+    
 }
 
 impl Debug for Position {
@@ -81,6 +144,8 @@ impl Default for Position {
             ep_square: 0,
             halfmove_clock: 0,
             fullmove_number: 0,
+            zobrist_numbers: ZobristNumbers::init(),
+            hash_key: 0
         }
     }
 }
@@ -112,6 +177,11 @@ impl CastlingRights {
         CastlingRights { flags: 0 }
     }
 
+    pub fn allow(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let mask = Self::mask(colour, side);
+        self.flags |= mask;
+    }
+
     pub fn remove(&mut self, colour: Colour, side: Option<BoardSide>) {
         let mask = Self::mask(colour, side);
         self.flags = self.flags & !(mask);
@@ -120,11 +190,6 @@ impl CastlingRights {
     pub fn allowed(&self, colour: Colour, side: BoardSide) -> bool {
         let mask = Self::mask(colour, Some(side));
         self.flags & mask != 0
-    }
-
-    pub fn allow(&mut self, colour: Colour, side: Option<BoardSide>) {
-        let mask = Self::mask(colour, side);
-        self.flags |= mask;
     }
 
     #[inline]
@@ -188,6 +253,11 @@ pub fn piece_colour(piece: Piece) -> Option<Colour> {
 #[inline]
 pub fn opposite_colour(colour: Colour) -> Colour {
     colour ^ 1
+}
+
+#[inline]
+pub fn index0x88to64(square: SquareIndex) -> u8 {
+    rank(square) * 8 + file(square)
 }
 
 #[derive(Default)]
@@ -282,6 +352,14 @@ mod test {
 
         let castling2 = CastlingRights { flags: 0b1011 };
         assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
+    }
+
+    #[test]
+    fn test_index0x88to64() {
+        assert_eq!(8, index0x88to64(0x10));
+        assert_eq!(63, index0x88to64(0x77));
+        assert_eq!(43, index0x88to64(0x53));
+        assert_eq!(0, index0x88to64(0x00));
     }
 
     #[test]

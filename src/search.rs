@@ -1,6 +1,6 @@
 use std::{
     sync::mpsc::{Receiver, Sender},
-    thread,
+    thread, time::SystemTime,
 };
 
 use crate::{
@@ -10,18 +10,23 @@ use crate::{
         movegen::{generate_moves, side_to_move_in_check, Move},
         notation::{make_move, undo_move, LongAlgebraicNotationMove},
         Position,
-    },
+    }, transposition::{NodeType, TranspositionTable, TranspositionItem},
 };
 
 pub type Depth = i16;
 
 type Line = Vec<Move>;
 
+const TRANSPOSITION_TABLE_SIZE: usize = 1_000_000;
+
 #[derive(Debug)]
 pub struct SearchTree {
     position: Position,
     search_depth: Depth,
+    transposition_table: TranspositionTable,
     pv: Line,
+    nodes_searched: usize,
+    search_start: SystemTime,
     sender: Sender<OutputMessage>,
     _receiver: Receiver<InputMessage>,
 }
@@ -36,7 +41,10 @@ impl SearchTree {
         Self {
             position,
             search_depth: depth,
+            transposition_table: TranspositionTable::new(TRANSPOSITION_TABLE_SIZE),
             pv: vec![],
+            nodes_searched: 0,
+            search_start: SystemTime::now(),
             sender,
             _receiver: receiver,
         }
@@ -48,7 +56,7 @@ impl SearchTree {
         input_receiver: Receiver<InputMessage>,
     ) {
         thread::spawn(move || {
-            let mut tree = SearchTree::new(position, 4, output_sender, input_receiver);
+            let mut tree = SearchTree::new(position, 5, output_sender, input_receiver);
             tree.search();
         });
     }
@@ -57,6 +65,8 @@ impl SearchTree {
     // the uci thread if we sent it here.
     pub fn search(&mut self) -> LongAlgebraicNotationMove {
         let mut pline: Line = vec![Move::default(); self.search_depth as usize];
+
+        self.nodes_searched = 0;
     
         self.search_ab(
             Score::MIN / 2,
@@ -87,14 +97,41 @@ impl SearchTree {
         depthleft: Depth,
         pline: &mut Line,
     ) -> Score {
+        self.nodes_searched += 1;
+
         let mut line: Line = vec![];
     
         // This is a hack to let us modify alpha without changing it to a mutable parameter.
         // TODO: Just sort out the parameters and calls.
         let mut alpha_local = alpha;
+
+        // Node type to insert into transposition table.
+        let mut tt_node_type = NodeType::All;
+
+        let from_tt = self.transposition_table.probe(self.position.hash_key());
+        if from_tt.is_some() {
+            let from_tt_val = from_tt.unwrap();
+            if from_tt_val.depth >= depthleft {
+                match from_tt_val.node_type {
+                    NodeType::PV => return from_tt_val.score,
+                    NodeType::All => if from_tt_val.score <= alpha { return alpha; },
+                    NodeType::Cut => if from_tt_val.score > beta { return beta; },
+                }
+            }
+        }
     
         if depthleft == 0 {
-            return evaluate(&self.position);
+            let eval = evaluate(&self.position);
+            let tt_item = TranspositionItem {
+                key: self.position.hash_key(),
+                best_move: None,
+                depth: depthleft,
+                score: eval,
+                node_type: NodeType::PV,
+                created: SystemTime::now()
+            };
+            self.transposition_table.store(tt_item);
+            return eval;
         }
     
         let moves = generate_moves(&self.position);
@@ -120,11 +157,22 @@ impl SearchTree {
             undo_move(&mut self.position, undo);
     
             if move_score >= beta {
+                let tt_item = TranspositionItem {
+                    key: self.position.hash_key(),
+                    best_move: None,
+                    depth: depthleft,
+                    score: beta,
+                    node_type: NodeType::Cut,
+                    created: SystemTime::now()
+                };
+                self.transposition_table.store(tt_item);
                 return beta;
             }
     
             if move_score > alpha_local {
                 alpha_local = move_score;
+
+                tt_node_type = NodeType::PV;
     
                 // If alpha is raised, update the PV.
                 pline.clear();
@@ -143,17 +191,40 @@ impl SearchTree {
                     let score = InfoMessage::Score(vec![
                         ScoreInfo::Centipawns(move_score)
                     ]);
+
+                    let nodes = InfoMessage::NodesSearched(self.nodes_searched);
+                    
+                    let mut info_messages = vec![InfoMessage::PrincipalVariation(
+                        pv_algebraic,
+                    ), score, nodes];
+
+                    let nodes_per_second = self.search_start.elapsed();
+                    if let Ok(duration) = nodes_per_second {
+                        let secs = duration.as_secs();
+                        if secs > 0 {
+                            let nps = self.nodes_searched / secs as usize;
+                            info_messages.push(InfoMessage::NodesPerSecond(nps));
+                        }
+                    }
     
                     // Send it to the output.
                     self
                         .sender
-                        .send(OutputMessage::Info(vec![InfoMessage::PrincipalVariation(
-                            pv_algebraic,
-                        ), score]))
+                        .send(OutputMessage::Info(info_messages))
                         .unwrap();
                 }
             }
         }
+
+        let tt_item = TranspositionItem {
+            key: self.position.hash_key(),
+            best_move: None,
+            depth: depthleft,
+            score: alpha_local,
+            node_type: tt_node_type,
+            created: SystemTime::now()
+        };
+        self.transposition_table.store(tt_item);
     
         alpha_local
     }

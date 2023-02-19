@@ -114,7 +114,7 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
                 'q' => BoardSide::Queenside,
                 _ => return Err(FenError::InvalidCastlingInfo),
             };
-            position.castling_rights.allow(colour, Some(side));
+            position.castling_allow(colour, Some(side));
         }
     }
 
@@ -130,7 +130,7 @@ pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> 
         }
     };
 
-    position.ep_square = ep_square;
+    position.set_ep_square(ep_square);
 
     let halfmove = parts.next();
 
@@ -258,16 +258,16 @@ pub fn make_move(
     };
 
     let ep_square = position.ep_square;
-    position.ep_square = 0;
+    position.set_ep_square(0);
 
     let moved_piece_colour = piece_colour(position.squares[from_index]).unwrap();
 
-    match queening_piece {
-        None => position.squares[to_index] = position.squares[from_index],
-        Some(piece_type) => {
-            position.squares[to_index] = get_piece(piece_type, moved_piece_colour);
-        }
-    }
+    let new_piece = match queening_piece {
+        None => position.squares[from_index],
+        Some(piece_type) => get_piece(piece_type, moved_piece_colour)
+    };
+
+    position.set_square_to_piece(to_index, new_piece);
 
     if is_pawn_move {
         let diff = from_index.abs_diff(to_index);
@@ -275,9 +275,9 @@ pub fn make_move(
             let from_rank = rank(from_index);
             let from_file = file(from_index);
             if from_rank == 1 {
-                position.ep_square = square_index(2, from_file);
+                position.set_ep_square(square_index(2, from_file));
             } else if from_rank == 6 {
-                position.ep_square = square_index(5, from_file);
+                position.set_ep_square(square_index(5, from_file));
             } else {
                 panic!("Weird e.p. square!");
             }
@@ -305,7 +305,7 @@ pub fn make_move(
         }
     } else if moved_piece_type == KING {
         if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex] {
-            position.castling_rights.remove(moved_piece_colour, None);
+            position.castling_remove(moved_piece_colour, None);
         }
 
         // Castling.
@@ -327,21 +327,21 @@ pub fn make_move(
                 panic!("Not a rook");
             }
             let rook_to = (from_index + to_index) / 2; // Avoid negative numbers.
-            position.squares[rook_to] = rook;
-            position.squares[rook_square] = EMPTY;
-            position.castling_rights.remove(moved_piece_colour, None);
+            position.set_square_to_piece(rook_to, rook);
+            position.remove_from_square(rook_square);
+
+            // TODO: Update hash key.
+            position.castling_remove(moved_piece_colour, None);
         }
 
         position.king_squares[moved_piece_colour as SquareIndex] = to_index;
     } else if moved_piece_type == ROOK {
         if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
             position
-                .castling_rights
-                .remove(moved_piece_colour, Some(BoardSide::Queenside));
+                .castling_remove(moved_piece_colour, Some(BoardSide::Queenside));
         } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
             position
-                .castling_rights
-                .remove(moved_piece_colour, Some(BoardSide::Kingside));
+                .castling_remove(moved_piece_colour, Some(BoardSide::Kingside));
         }
     }
 
@@ -351,18 +351,16 @@ pub fn make_move(
     if captured_piece != EMPTY && piece_type(captured_piece) == ROOK {
         if capture_square == A_ROOK_HOME_SQUARES[opp_side_colour as usize] {
             position
-                .castling_rights
-                .remove(opp_side_colour, Some(BoardSide::Queenside));
+                .castling_remove(opp_side_colour, Some(BoardSide::Queenside));
         } else if capture_square == H_ROOK_HOME_SQUARES[opp_side_colour as usize] {
             position
-                .castling_rights
-                .remove(opp_side_colour, Some(BoardSide::Kingside));
+                .castling_remove(opp_side_colour, Some(BoardSide::Kingside));
         }
     }
 
     // Remove the e.p. capture if necessary.
     if is_enpassent {
-        position.squares[capture_square] = EMPTY;
+        position.remove_from_square(capture_square);
     }
 
     // Reset the half move clock for pawn moves or captures.
@@ -370,7 +368,7 @@ pub fn make_move(
         position.halfmove_clock = 0;
     }
 
-    position.squares[from_index] = EMPTY;
+    position.remove_from_square(from_index);
 
     if position.side_to_move == BLACK {
         position.fullmove_number += 1;
@@ -409,8 +407,8 @@ pub fn undo_move(position: &mut Position, undo: MoveUndo) {
             false => H_ROOK_HOME_SQUARES[side_moved as usize],
         };
 
-        position.squares[rook_from_index] = position.squares[rook_index];
-        position.squares[rook_index] = EMPTY;
+        position.set_square_to_piece(rook_from_index, position.squares[rook_index]);
+        position.remove_from_square(rook_index);
     }
 
     if is_king_move {
@@ -419,15 +417,15 @@ pub fn undo_move(position: &mut Position, undo: MoveUndo) {
 
     // TODO: Deal with queening.
 
-    position.squares[undo.from_index] = undo.moved_piece;
+    position.set_square_to_piece(undo.from_index, undo.moved_piece);
 
     if is_enpassent {
-        position.squares[undo.to_index] = EMPTY;
+        position.remove_from_square(undo.to_index);
     }
 
-    position.squares[capture_square] = undo.captured_piece;
+    position.set_square_to_piece(capture_square, undo.captured_piece);
 
-    position.ep_square = undo.ep_square;
+    position.set_ep_square(undo.ep_square);
     position.castling_rights = undo.castling_rights;
     position.halfmove_clock = undo.halfmove_clock;
     if position.side_to_move == WHITE {
