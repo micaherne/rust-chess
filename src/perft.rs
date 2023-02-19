@@ -7,11 +7,14 @@ use std::{
 use crate::position0x88::{
     movegen::generate_moves,
     notation::{
-        make_move, make_moves, set_from_fen, square_index_to_str, to_fen, undo_move,
+        make_move, make_moves, set_from_fen, to_fen, undo_move,
         LongAlgebraicNotationMove,
     },
     Position,
 };
+
+#[cfg(debug_assertions)]
+use crate::position0x88::notation::square_index_to_str;
 
 pub fn perft(position: &mut Position, depth: u16) -> usize {
     if depth == 0 {

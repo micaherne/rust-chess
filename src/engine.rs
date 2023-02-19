@@ -8,8 +8,7 @@ use crate::{
     position0x88::{
         notation::{make_moves, set_from_fen, set_startpos},
         MoveUndo, Position,
-    },
-    search::start_search_thread,
+    }, search::SearchTree,
 };
 
 pub struct Engine {
@@ -99,7 +98,7 @@ impl Engine {
                     let (tx, rx) = mpsc::channel();
                     input_sender = Some(tx);
                     let output_sender = self.sender.clone();
-                    Some(start_search_thread(
+                    Some(SearchTree::start_search_thread(
                         self.position,
                         &subcommands,
                         output_sender,
