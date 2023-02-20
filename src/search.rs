@@ -198,13 +198,15 @@ impl SearchTree {
                         pv_algebraic,
                     ), score, nodes];
 
-                    let nodes_per_second = self.search_start.elapsed();
-                    if let Ok(duration) = nodes_per_second {
+                    let time_elapsed = self.search_start.elapsed();
+                    if let Ok(duration) = time_elapsed {
                         let secs = duration.as_secs();
                         if secs > 0 {
                             let nps = self.nodes_searched / secs as usize;
                             info_messages.push(InfoMessage::NodesPerSecond(nps));
                         }
+                        let millis = duration.as_millis();
+                        info_messages.push(InfoMessage::TimeSearched(millis as usize));
                     }
     
                     // Send it to the output.
