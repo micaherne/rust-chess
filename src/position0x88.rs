@@ -85,6 +85,10 @@ impl Position {
         self.side_to_move = colour;
     }
 
+    pub fn get_side_to_move(&self) -> Colour {
+        self.side_to_move
+    }
+
     // This is mainly due to bad design - we need to update the hash.
     pub fn castling_allow(&mut self, colour: Colour, side: Option<BoardSide>) {
         let pre = self.castling_rights.flags;
