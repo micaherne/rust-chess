@@ -36,7 +36,8 @@ const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
-#[derive(Debug, Default, Clone, Copy)]pub struct Move {
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Move {
     pub from_index: SquareIndex,
     pub to_index: SquareIndex,
     pub queening_piece: Option<Piece>,

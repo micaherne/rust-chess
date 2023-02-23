@@ -22,8 +22,8 @@ pub struct TranspositionItem {
 
 #[derive(Debug)]
 pub struct TranspositionTable {
-    requested_size: usize,
-    actual_size: usize,
+    _requested_size: usize,
+    _actual_size: usize,
     key_mask: ZobristNumber,
     items: HashMap<ZobristNumber, TranspositionItem>,
 }
@@ -39,8 +39,8 @@ impl TranspositionTable {
         let key_mask = (actual_size - 1) as ZobristNumber;
         let items = HashMap::with_capacity(actual_size);
         Self {
-            requested_size,
-            actual_size,
+            _requested_size: requested_size,
+            _actual_size: actual_size,
             key_mask,
             items,
         }
@@ -115,7 +115,7 @@ mod test {
     #[test]
     fn test_transposition_table() {
         let mut tt1 = TranspositionTable::new(100);
-        assert_eq!(128, tt1.actual_size);
+        assert_eq!(128, tt1._actual_size);
         assert_eq!(127, tt1.key_mask);
 
         let item1 = TranspositionItem {
@@ -138,7 +138,7 @@ mod test {
         assert!(tt1.probe(71).is_none());
 
         let tt2 = TranspositionTable::new(1_000_000);
-        assert_eq!(1 << 20, tt2.actual_size);
+        assert_eq!(1 << 20, tt2._actual_size);
         assert_eq!((1 << 20) - 1, tt2.key_mask);
     }
 }

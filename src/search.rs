@@ -9,8 +9,8 @@ use crate::{
     position0x88::{
         evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
         movegen::{generate_moves, side_to_move_in_check, Move},
-        notation::{colour_to_char, make_move, undo_move, LongAlgebraicNotationMove},
-        Position, WHITE, BLACK,
+        notation::{make_move, undo_move, LongAlgebraicNotationMove},
+        Position, WHITE,
     },
     transposition::{NodeType, TranspositionItem, TranspositionTable},
 };
@@ -25,12 +25,11 @@ const TRANSPOSITION_TABLE_SIZE: usize = 1_000_000;
 pub struct SearchTree {
     position: Position,
     search_depth: Depth,
-    current_ply: usize,
     transposition_table: TranspositionTable,
     pv: Line,
     nodes_searched: usize,
     time_allowed: usize, // in milliseconds - zero is infinity
-    timeout: bool, // have we run out of time and need to return immediately?
+    timeout: bool,       // have we run out of time and need to return immediately?
     search_start: SystemTime,
     sender: Sender<OutputMessage>,
     _receiver: Receiver<InputMessage>,
@@ -47,7 +46,6 @@ impl SearchTree {
         Self {
             position,
             search_depth: depth,
-            current_ply: 0,
             transposition_table: TranspositionTable::new(TRANSPOSITION_TABLE_SIZE),
             pv: vec![],
             nodes_searched: 0,
@@ -68,7 +66,13 @@ impl SearchTree {
     ) {
         let search_time_allowed = SearchTree::calculate_time_allowed(&position, &commands);
 
-        let mut tree = SearchTree::new(position, 5, search_time_allowed, output_sender, input_receiver);
+        let mut tree = SearchTree::new(
+            position,
+            5,
+            search_time_allowed,
+            output_sender,
+            input_receiver,
+        );
 
         thread::spawn(move || {
             tree.search();
@@ -83,10 +87,26 @@ impl SearchTree {
 
         for command in commands {
             match command {
-                GoSubcommand::WTime(x) => if wtm { time_left = x.clone() },
-                GoSubcommand::BTime(x) => if !wtm { time_left = x.clone() },
-                GoSubcommand::WInc(x) => if wtm { increment = x.clone() },
-                GoSubcommand::BInc(x) => if !wtm { increment = x.clone() },
+                GoSubcommand::WTime(x) => {
+                    if wtm {
+                        time_left = x.clone()
+                    }
+                }
+                GoSubcommand::BTime(x) => {
+                    if !wtm {
+                        time_left = x.clone()
+                    }
+                }
+                GoSubcommand::WInc(x) => {
+                    if wtm {
+                        increment = x.clone()
+                    }
+                }
+                GoSubcommand::BInc(x) => {
+                    if !wtm {
+                        increment = x.clone()
+                    }
+                }
                 GoSubcommand::MovesToGo(x) => moves_to_go = x.clone(),
                 GoSubcommand::Infinite => return 0,
                 _ => {}
@@ -95,7 +115,8 @@ impl SearchTree {
 
         if moves_to_go == 0 {
             // It's sudden death.
-            time_left as usize
+            // TODO: this is stupid - find a better way to do it.
+            (time_left / 40) as usize
         } else {
             (time_left / moves_to_go + increment) as usize
         }
@@ -136,12 +157,25 @@ impl SearchTree {
         depthleft: Depth,
         pline: &mut Line,
     ) -> Score {
-
-        if self.timeout {
-            return 0;
-        }
-
+        
         self.nodes_searched += 1;
+
+        if self.nodes_searched % 20000 == 0 {
+            let res = self._receiver.try_recv();
+            if res.is_ok() {
+                let message = res.unwrap();
+                match message {
+                    InputMessage::Stop(_) => {
+                        self.timeout = true;
+                        return 0;
+                    }
+                    _ => {
+                        #[cfg(debug_assertions)]
+                        println!("Unexpected input message!");
+                    }
+                }
+            }
+        }
 
         let mut line: Line = vec![];
 
@@ -239,8 +273,18 @@ impl SearchTree {
                     // Pull it into the search data.
                     self.pv = pline.iter().map(|m| m.to_owned()).collect();
 
-                    // TODO: This should negate the score if black is to move I think.
-                    let score = InfoMessage::Score(vec![ScoreInfo::Centipawns(move_score)]);
+                    // Show the score from the engine's point of view.
+                    let score_for_me = match depthleft & 1 {
+                        0 => -move_score,
+                        1 => move_score,
+                        _ => {
+                            #[cfg(debug_assertions)]
+                            println!("Unexpected value for depth mod 2");
+                            0
+                        }
+                    };
+
+                    let score = InfoMessage::Score(vec![ScoreInfo::Centipawns(score_for_me)]);
 
                     let nodes = InfoMessage::NodesSearched(self.nodes_searched);
 
@@ -263,8 +307,8 @@ impl SearchTree {
                             let nps = self.nodes_searched / secs as usize;
                             info_messages.push(InfoMessage::NodesPerSecond(nps));
                         }
-                        
-                        
+
+                        info_messages.push(InfoMessage::Depth(self.search_depth as usize));
                     }
 
                     // Send it to the output.
@@ -291,7 +335,11 @@ impl SearchTree {
 
 #[cfg(test)]
 mod test {
-    use std::sync::mpsc;
+    use std::{env, fs, sync::mpsc};
+
+    use regex::Regex;
+
+    use crate::position0x88::notation::square_index_to_str;
 
     use super::*;
 
@@ -329,5 +377,57 @@ mod test {
             assert_eq!(m.1, tree.pv[i].to_index);
         }
         assert_eq!("d5f6", mv.text);
+    }
+
+    #[test]
+    fn test_search() {
+        let cwd = env::current_dir().unwrap();
+        let root = cwd.ancestors().next().unwrap();
+        let path = root.join("tests/wac.epd");
+        let perft_contents = fs::read_to_string(path).unwrap();
+        let perft_lines = perft_contents.split("\n");
+        for line in perft_lines {
+            if line.trim() == "" {
+                break;
+            }
+            let line_parts: Vec<&str> = line.split_whitespace().collect();
+            let fen = line_parts[0..4].join(" ");
+            let rest = line_parts[4..].join(" ");
+            let mut operations = rest.split(";");
+            let mut best_moves = operations.next().unwrap().split(" ");
+            if best_moves.next().unwrap() != "bm" {
+                println!("Invalid");
+                continue;
+            }
+            let best_move = best_moves.next().unwrap();
+            if best_moves.next().is_some() {
+                println!("Ignoring multiple best moves");
+                continue;
+            }
+
+            let re = Regex::new("([RKBQK]?)x?([a-h][1-8])\\+?").unwrap();
+
+            let p = re.captures(best_move).unwrap();
+
+            let to_square = p.get(2).unwrap().as_str();
+            let piece_type = p.get(1).unwrap().as_str();
+
+            let pos: Position = fen.as_str().into();
+
+            let (sender, _t) = mpsc::channel::<OutputMessage>();
+            let (_x, receiver) = mpsc::channel::<InputMessage>();
+
+            let mut tree = SearchTree::new(pos, 7, 1000000, sender, receiver);
+
+            tree.search();
+
+            let best_move_to = square_index_to_str(tree.pv[0].to_index);
+
+            println!("{} {} {}", best_move_to, to_square, piece_type);
+            if best_move_to != to_square {
+                println!("{}", fen);
+                break;
+            }
+        }
     }
 }
