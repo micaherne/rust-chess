@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::transposition::{ZobristNumbers, ZobristNumber};
+use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square};
 
 use self::{notation::piece_to_char};
 
@@ -116,6 +116,12 @@ impl Position {
 
     pub fn hash_key(&self) -> ZobristNumber {
         self.hash_key
+    }
+
+    #[inline]
+    pub fn square_piece(&self, square: SquareIndex) -> Piece {
+        debug_assert!(is_valid_square(square as i16));
+        self.squares[square]
     }
     
 }
