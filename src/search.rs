@@ -336,11 +336,7 @@ impl SearchTree {
 
 #[cfg(test)]
 mod test {
-    use std::{env, fs, sync::mpsc};
-
-    use regex::Regex;
-
-    use crate::position0x88::notation::square_index_to_str;
+    use std::{sync::mpsc};
 
     use super::*;
 
@@ -380,6 +376,7 @@ mod test {
         assert_eq!("d5f6", mv.text);
     }
 
+/* 
     #[test]
     fn test_search() {
         return;
@@ -431,5 +428,5 @@ mod test {
                 break;
             }
         }
-    }
+    }*/
 }

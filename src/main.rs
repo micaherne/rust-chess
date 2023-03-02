@@ -11,7 +11,6 @@ pub mod transposition;
 
 use std::{collections::VecDeque, env, sync::mpsc, thread};
 
-use messages::{InputMessage, OutputMessage};
 use perft::{run_divide, run_perft, run_perft_compare};
 // use uci::{UciInputListener, UciOutputListener};
 

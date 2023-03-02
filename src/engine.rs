@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{self, Receiver, Sender},
 };
 
-use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
+use chess_uci::messages::{InputMessage, OutputMessage};
 
 use crate::{
     position0x88::{
