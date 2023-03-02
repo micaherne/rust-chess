@@ -1,11 +1,29 @@
+use crate::validate_long_algebraic_move;
+
+#[derive(Debug, Clone)]
 pub struct LongAlgebraicNotationMove {
     pub text: String,
+}
+
+#[derive(Debug)]
+pub enum LongAlgebraicNotationError {
+    InvalidMove,
 }
 
 impl LongAlgebraicNotationMove {
     pub fn from_string(str: &str) -> Self {
         Self {
             text: str.to_string(),
+        }
+    }
+
+    pub fn from_text(
+        text: String,
+    ) -> Result<LongAlgebraicNotationMove, LongAlgebraicNotationError> {
+        if validate_long_algebraic_move(&text) {
+            Ok(LongAlgebraicNotationMove { text })
+        } else {
+            Err(LongAlgebraicNotationError::InvalidMove)
         }
     }
 }
@@ -19,7 +37,7 @@ pub enum InputMessage {
     SendId, // Uci command.
     SetDebug(bool),
     IsReady,
-    SetOption(String, String),
+    SetOption(String, Option<String>),
     // Register?
     NewGame,
     SetStartPosition,
@@ -35,6 +53,7 @@ pub enum InputMessage {
 pub enum OutputMessage {
     Id(Vec<(String, String)>),
     AvailableOptions(Vec<AvailableOption>),
+    UciOk,
     Ready,
     Quitting, // Not a real UCI message, used for telling threads to quit.
     BestMove(LongAlgebraicNotationMove, Option<LongAlgebraicNotationMove>),

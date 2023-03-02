@@ -12,6 +12,7 @@ use super::{
     EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
+use chess_uci::{messages::LongAlgebraicNotationError, validate_long_algebraic_move};
 use regex::Regex;
 
 pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
@@ -439,11 +440,6 @@ pub struct LongAlgebraicNotationMove {
     pub text: String,
 }
 
-#[derive(Debug)]
-pub enum LongAlgebraicNotationError {
-    InvalidMove,
-}
-
 impl LongAlgebraicNotationMove {
     pub fn from_text(
         text: String,
@@ -470,6 +466,12 @@ impl LongAlgebraicNotationMove {
             None => None,
             Some(i) => char_to_piece_type(*i),
         }
+    }
+}
+
+impl From<chess_uci::messages::LongAlgebraicNotationMove> for LongAlgebraicNotationMove {
+    fn from(value: chess_uci::messages::LongAlgebraicNotationMove) -> Self {
+        Self::from_text(value.text).unwrap()
     }
 }
 
@@ -583,10 +585,6 @@ pub fn castling_rights_to_string(castling: &CastlingRights) -> String {
         result.push('-');
     }
     result
-}
-pub fn validate_long_algebraic_move(text: &str) -> bool {
-    let re = Regex::new("^([a-h][1-8]){2}[rnbq]?$").unwrap();
-    re.is_match(text)
 }
 
 #[cfg(test)]

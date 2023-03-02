@@ -1,9 +1,8 @@
+use chess_uci::messages::{LongAlgebraicNotationMove, InputMessage, OutputMessage};
+
 use crate::{
     engine::Engine,
-    messages::{
-        AvailableOption, GoSubcommand, InfoMessage, InputMessage, OutputMessage, ScoreInfo,
-    },
-    position0x88::notation::{make_moves, set_from_fen, set_startpos, LongAlgebraicNotationMove},
+    position0x88::notation::{make_moves, set_from_fen, set_startpos},
 };
 
 use std::{
@@ -60,6 +59,7 @@ impl UciOutputListener {
                 );
                 println!("info {}", info_string)
             }
+            OutputMessage::Id(_) => todo!(),
         }
     }
 

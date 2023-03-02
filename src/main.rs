@@ -5,17 +5,17 @@ pub mod perft;
 pub mod position0x88;
 pub mod search;
 pub mod transposition;
-pub mod uci;
+// pub mod uci;
 
 // use std::env;
 
-use std::{thread, sync::mpsc, collections::VecDeque, env};
+use std::{collections::VecDeque, env, sync::mpsc, thread};
 
 use messages::{InputMessage, OutputMessage};
-use perft::{run_perft, run_divide, run_perft_compare};
-use uci::{UciInputListener, UciOutputListener};
+use perft::{run_divide, run_perft, run_perft_compare};
+// use uci::{UciInputListener, UciOutputListener};
 
-use crate::{engine::Engine};
+use crate::engine::Engine;
 
 fn main() {
     let mut args: VecDeque<String> = env::args().collect();
@@ -30,38 +30,50 @@ fn main() {
         "perft" => run_perft(args),
         "perftcompare" => run_perft_compare(&mut args),
         "divide" => run_divide(args),
-        _ => println!("Invalid command {}", command)
+        _ => println!("Invalid command {}", command),
     }
-    
 }
 
 fn run_uci() {
-    let (input_sender, input_receiver) = mpsc::channel::<InputMessage>();
-    let (output_sender, output_receiver) = mpsc::channel::<OutputMessage>();
+    let (output_sender, output_receiver) = mpsc::channel::<chess_uci::messages::OutputMessage>();
 
+    let input_receiver = chess_uci::listen(output_receiver);
 
     let mut engine = Engine::new(input_receiver, output_sender);
+
     let engine_handle = thread::spawn(move || {
         engine.listen();
     });
 
-    let uci_input = UciInputListener {
-        sender: input_sender
-    };
-
-    let uci_output = UciOutputListener {
-        receiver: output_receiver
-    };
-
-    let h = thread::spawn(move || {
-        uci_input.listen();
-    });
-
-    let output_handle = thread::spawn(move || {
-        uci_output.listen();
-    });
-    
     engine_handle.join().unwrap();
-    h.join().unwrap();
-    output_handle.join().unwrap();
 }
+
+// fn run_uci_old() {
+//     let (input_sender, input_receiver) = mpsc::channel::<InputMessage>();
+//     let (output_sender, output_receiver) = mpsc::channel::<OutputMessage>();
+
+//     let mut engine = Engine::new(input_receiver, output_sender);
+//     let engine_handle = thread::spawn(move || {
+//         engine.listen();
+//     });
+
+//     let uci_input = UciInputListener {
+//         sender: input_sender
+//     };
+
+//     let uci_output = UciOutputListener {
+//         receiver: output_receiver
+//     };
+
+//     let h = thread::spawn(move || {
+//         uci_input.listen();
+//     });
+
+//     let output_handle = thread::spawn(move || {
+//         uci_output.listen();
+//     });
+
+//     engine_handle.join().unwrap();
+//     h.join().unwrap();
+//     output_handle.join().unwrap();
+// }

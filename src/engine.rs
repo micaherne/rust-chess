@@ -1,14 +1,16 @@
 use std::{
     collections::HashMap,
-    sync::mpsc::{Receiver, Sender, self},
+    sync::mpsc::{self, Receiver, Sender},
 };
 
+use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
+
 use crate::{
-    messages::{InputMessage, OutputMessage},
     position0x88::{
         notation::{make_moves, set_from_fen, set_startpos},
         MoveUndo, Position,
-    }, search::SearchTree,
+    },
+    search::SearchTree,
 };
 
 pub struct Engine {
@@ -17,7 +19,7 @@ pub struct Engine {
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
-    undo_stack: Vec<MoveUndo>
+    undo_stack: Vec<MoveUndo>,
 }
 
 struct EngineOptions {
@@ -73,7 +75,16 @@ impl Engine {
                     set_from_fen(&mut self.position, &fen).unwrap()
                 }
                 InputMessage::MakeMoves(moves) => {
-                    self.undo_stack = make_moves(&mut self.position, &moves)
+                    let the_moves: Vec<crate::position0x88::notation::LongAlgebraicNotationMove> =
+                        moves
+                            .into_iter()
+                            .map(|x| {
+                                let v: crate::position0x88::notation::LongAlgebraicNotationMove =
+                                    x.into();
+                                v
+                            })
+                            .collect();
+                    self.undo_stack = make_moves(&mut self.position, &the_moves)
                 }
                 InputMessage::GetAvailableOptions => self
                     .sender
@@ -102,7 +113,7 @@ impl Engine {
                         self.position,
                         &subcommands,
                         output_sender,
-                        rx
+                        rx,
                     ));
                 }
                 InputMessage::Stop(to_send) => {
@@ -115,6 +126,17 @@ impl Engine {
                         }
                     }
                 }
+                InputMessage::SendId => {
+                    self.sender
+                        .send(OutputMessage::Id(vec![
+                            ("name".to_owned(), "Dexy".to_owned()),
+                            ("author".to_owned(), "Michael Aherne".to_owned()),
+                        ]))
+                        .unwrap();
+                    self.sender.send(OutputMessage::UciOk).unwrap();
+                }
+                InputMessage::SetOption(_, _) => todo!(),
+                InputMessage::PonderHit => todo!(),
             }
         }
         self.sender.send(OutputMessage::Quitting).unwrap();

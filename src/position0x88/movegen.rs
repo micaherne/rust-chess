@@ -1,8 +1,10 @@
+use chess_uci::messages::LongAlgebraicNotationMove;
+
 use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
 
 use super::{
     file,
-    notation::{piece_type_to_char, square_index_to_str, LongAlgebraicNotationMove, KING_HOME_SQUARES},
+    notation::{piece_type_to_char, square_index_to_str, KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
     BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, square_iter,
 };

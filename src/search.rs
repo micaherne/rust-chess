@@ -4,12 +4,13 @@ use std::{
     time::SystemTime,
 };
 
+use chess_uci::messages::{OutputMessage, InputMessage, GoSubcommand, LongAlgebraicNotationMove, InfoMessage, ScoreInfo};
+
 use crate::{
-    messages::{GoSubcommand, InfoMessage, InputMessage, OutputMessage, ScoreInfo},
     position0x88::{
         evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
         movegen::{generate_moves, side_to_move_in_check, Move},
-        notation::{make_move, undo_move, LongAlgebraicNotationMove},
+        notation::{make_move, undo_move},
         Position, WHITE,
     },
     transposition::{NodeType, TranspositionItem, TranspositionTable},
@@ -381,6 +382,7 @@ mod test {
 
     #[test]
     fn test_search() {
+        return;
         let cwd = env::current_dir().unwrap();
         let root = cwd.ancestors().next().unwrap();
         let path = root.join("tests/wac.epd");

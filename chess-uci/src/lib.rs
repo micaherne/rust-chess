@@ -1,13 +1,17 @@
 use std::{
+    collections::HashMap,
     io,
-    str::FromStr,
+    ops::Deref,
+    str::{FromStr, SplitAsciiWhitespace},
     sync::mpsc::{self, Receiver},
     thread,
 };
 
+use regex::Regex;
+
 use messages::{
     AvailableOption, InfoMessage, InputMessage, LongAlgebraicNotationMove, MoveList, OptionType,
-    OutputMessage, ScoreInfo,
+    OutputMessage, ScoreInfo, GoSubcommand, Line,
 };
 
 pub mod messages;
@@ -20,6 +24,7 @@ pub trait ToUciString {
     fn to_uci_string(&self) -> String;
 }
 
+#[derive(Debug)]
 pub enum UciInputError {
     Empty,
     UnknownKeyword(String),
@@ -28,6 +33,14 @@ pub enum UciInputError {
 }
 
 struct InputMessages(Vec<InputMessage>);
+
+impl Deref for InputMessages {
+    type Target = Vec<InputMessage>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl FromStr for InputMessages {
     type Err = UciInputError;
@@ -39,24 +52,155 @@ impl FromStr for InputMessages {
             "uci" => Ok(InputMessages(vec![InputMessage::SendId])),
             "debug" => {
                 let val = token_iter.next().ok_or(UciInputError::InvalidFormat)?;
-                match val {
-                    "true" => Ok(InputMessages(vec![InputMessage::SetDebug(true)])),
-                    "false" => Ok(InputMessages(vec![InputMessage::SetDebug(false)])),
-                    _ => Err(UciInputError::InvalidFormat),
-                }
+                let b = match val {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(UciInputError::InvalidFormat),
+                };
+                Ok(InputMessages(vec![InputMessage::SetDebug(b)]))
             }
             "isready" => Ok(InputMessages(vec![InputMessage::IsReady])),
-            "setoption" => Err(UciInputError::NotImplemented),
+            "setoption" => {
+                let params = parse_params(token_iter, vec!["name", "value"]);
+                if !params.contains_key("name") {
+                    return Err(UciInputError::InvalidFormat);
+                }
+                let value = if params.contains_key("value") {
+                    Some(params["value"].to_string())
+                } else {
+                    None
+                };
+                Ok(InputMessages(vec![InputMessage::SetOption(params["name"].to_string(), value)]))
+            }
             "register" => Err(UciInputError::NotImplemented),
             "ucinewgame" => Ok(InputMessages(vec![InputMessage::NewGame])),
-            "position" => Err(UciInputError::NotImplemented),
-            "go" => Err(UciInputError::NotImplemented),
+            "position" => {
+                let mut messages = vec![];
+                let pos_type = token_iter.next();
+                match pos_type {
+                    Some(t) => {
+                        match t {
+                            "startpos" => messages.push(InputMessage::SetStartPosition),
+                            "fen" => {
+                                let fen_strings: Vec<&str> = (&mut token_iter).take(6).collect();
+                                let fen_string = fen_strings.join(" ");
+                                messages.push(InputMessage::SetPositionFromFen(fen_string))
+                            },
+                            x => return Err(UciInputError::UnknownKeyword(x.to_owned())),
+                        }
+                    },
+                    None => return Err(UciInputError::InvalidFormat),
+                }
+                let moves_token = token_iter.next();
+                match moves_token {
+                    Some("moves") => {
+                        let mut moves: Line = vec![];
+                        for token in token_iter {
+                            let m = token.parse::<LongAlgebraicNotationMove>()?;
+                            moves.push(m)
+                        }
+                        messages.push(InputMessage::MakeMoves(moves));
+                    },
+                    Some(_) => return Err(UciInputError::InvalidFormat),
+                    None => {}
+                }
+                Ok(InputMessages(messages))
+            },
+            "go" => {
+                let go_params = parse_params(token_iter, vec!["searchmoves", "ponder", "wtime", "btime", "winc", "binc", "movestogo", "depth", "nodes", "mate", "movetime", "infinite"]);
+                let mut subcommands = vec![];
+                for (kw, str) in go_params {
+                    let command: GoSubcommand = format!("{} {}", kw, str).parse()?;
+                    subcommands.push(command);
+                }
+                Ok(InputMessages(vec![InputMessage::Go(subcommands)]))
+            },
             "stop" => Ok(InputMessages(vec![InputMessage::Stop(true)])),
             "ponderhit" => Ok(InputMessages(vec![InputMessage::PonderHit])),
             "quit" => Ok(InputMessages(vec![InputMessage::Quit])),
             kw => return Err(UciInputError::UnknownKeyword(kw.into())),
         }
     }
+}
+
+impl FromStr for GoSubcommand {
+    type Err = UciInputError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut token_iter = s.split_ascii_whitespace();
+        let keyword = token_iter.next().ok_or(UciInputError::Empty)?;
+        match keyword {
+            "searchmoves" => {
+                let mut move_list = MoveList::new();
+                for mv in token_iter {
+                    move_list.push(LongAlgebraicNotationMove::from_string(mv));
+                }
+                Ok(GoSubcommand::SearchMoves(move_list))
+            },
+            "ponder" => Ok(GoSubcommand::Ponder),
+            "wtime" => Ok(GoSubcommand::WTime(next_token_as_number(&mut token_iter)?)),
+            "btime" => Ok(GoSubcommand::BTime(next_token_as_number(&mut token_iter)?)),
+            "winc" => Ok(GoSubcommand::WInc(next_token_as_number(&mut token_iter)?)),
+            "binc" => Ok(GoSubcommand::BInc(next_token_as_number(&mut token_iter)?)),
+            "movestogo" => Ok(GoSubcommand::MovesToGo(next_token_as_number(&mut token_iter)?)),
+            "depth" => Ok(GoSubcommand::Depth(next_token_as_number(&mut token_iter)?)),
+            "nodes" => Ok(GoSubcommand::Nodes(next_token_as_number(&mut token_iter)?)),
+            "mate" => Ok(GoSubcommand::Mate(next_token_as_number(&mut token_iter)?)),
+            "movetime" => Ok(GoSubcommand::MoveTime(next_token_as_number(&mut token_iter)?)),
+            "infinite" => Ok(GoSubcommand::Infinite),
+            kw => Err(UciInputError::UnknownKeyword(kw.into()))
+
+        }
+    }
+
+}
+
+impl FromStr for LongAlgebraicNotationMove {
+    type Err = UciInputError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO: Validate notation here.
+        Ok(LongAlgebraicNotationMove::from_string(s))
+    }
+}
+
+fn next_token_as_number<T: FromStr>(token_iter: &mut SplitAsciiWhitespace) -> Result<T, UciInputError>{
+    let thing = token_iter.next().ok_or(UciInputError::InvalidFormat)?;
+    let parsed = thing.parse::<T>().or(Err(UciInputError::InvalidFormat))?;
+    Ok(parsed)
+}
+
+fn parse_params(
+    token_iterator: SplitAsciiWhitespace,
+    keywords: Vec<&str>,
+) -> HashMap<String, String> {
+    let mut result = HashMap::new();
+
+    let mut current_keyword: Option<String> = None;
+    let mut current_strings = vec![];
+
+    for token in token_iterator {
+        if keywords.contains(&token) {
+            if current_keyword.is_some() {
+                result.insert(
+                    current_keyword.unwrap().to_string(),
+                    current_strings.join(" "),
+                );
+                current_strings.clear();
+            }
+            current_keyword = Some(token.to_string());
+        } else {
+            current_strings.push(token.to_owned());
+        }
+    }
+    if current_keyword.is_some() {
+        let kw = current_keyword.unwrap();
+        if !result.contains_key(&kw) {
+            result.insert(kw, current_strings.join(" "));
+        }
+    }
+
+    result
 }
 
 impl ToUciString for OutputMessage {
@@ -89,6 +233,7 @@ impl ToUciString for OutputMessage {
                 let body: Vec<String> = parts.iter().map(|x| x.to_uci_string()).collect();
                 format!("info {}", body.join(" "))
             }
+            OutputMessage::UciOk => format!("uciok"),
         }
     }
 }
@@ -225,7 +370,7 @@ fn spawn_output_listener(output_receiver: Receiver<OutputMessage>) {
                 return;
             }
             Ok(output_message) => {
-                let output = process_received_message(output_message);
+                let output = output_message.to_uci_string();
                 println!("{}", output);
             }
             Err(_) => {}
@@ -255,8 +400,9 @@ fn process_text_input(text_input: String) -> Result<InputMessages, UciInputError
     return Ok(messages);
 }
 
-pub fn process_received_message(message: OutputMessage) -> String {
-    message.to_uci_string()
+pub fn validate_long_algebraic_move(text: &str) -> bool {
+    let re = Regex::new("^([a-h][1-8]){2}[rnbq]?$").unwrap();
+    re.is_match(text)
 }
 
 #[cfg(test)]
@@ -271,9 +417,45 @@ mod test {
         );
         assert_eq!(
             "info currmove e2e4",
-            OutputMessage::Info(InfoMessage::CurrentMove(
+            OutputMessage::Info(vec![InfoMessage::CurrentMove(
                 LongAlgebraicNotationMove::from_string("e2e4")
-            ))
+            )])
+            .to_uci_string()
         );
+    }
+
+    #[test]
+    fn test_from_uci() {
+        let mut x = "uci".parse::<InputMessages>().unwrap();
+        assert_eq!(1, x.len());
+        // x = "position startpos moves e2e4".parse::<InputMessages>().unwrap();
+        // assert_eq!(2, x.len());
+        x = "debug off".parse::<InputMessages>().unwrap();
+        if let InputMessage::SetDebug(false) = x[0] {
+            assert!(true);
+        } else {
+            assert!(false);
+        }
+        x = "go wtime 30000 btime 30000 winc 5 binc 5".parse::<InputMessages>().unwrap();
+        assert_eq!(1, x.len());
+        if let InputMessage::Go(f) = &x[0] {
+            assert!(true);
+            assert_eq!(4, f.len());
+        } else {
+            assert!(false);
+        }
+        x = "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1 moves e7e5".parse::<InputMessages>().unwrap();
+        assert_eq!(2, x.len())
+    }
+
+    #[test]
+    fn test_parse_params() {
+        let v1 = parse_params(
+            "name NalimovPath value d:\\tb;c\\tb".split_ascii_whitespace(),
+            vec!["name", "value"],
+        );
+        assert_eq!(2, v1.len());
+        assert!(v1.contains_key("name"));
+        assert!(v1.contains_key("value"));
     }
 }
