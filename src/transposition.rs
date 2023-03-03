@@ -5,12 +5,12 @@ use rand::RngCore;
 use crate::{
     position0x88::{
         evaluate::Score,
-        movegen::{Move, PIECE_TYPES_COUNT},
+        movegen::{Move, PIECE_TYPES_COUNT}, BLACK, WHITE,
     },
     search::Depth,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TranspositionItem {
     pub key: ZobristNumber,
     pub best_move: Option<Move>,
@@ -18,6 +18,8 @@ pub struct TranspositionItem {
     pub score: Score,
     pub node_type: NodeType,
     pub created: SystemTime,
+    #[cfg(debug_assertions)]
+    pub fen: String
 }
 
 #[derive(Debug)]
@@ -88,7 +90,7 @@ pub enum NodeType {
 
 #[derive(Clone, Copy)]
 pub struct ZobristNumbers {
-    pub piece_square: [ZobristPieceSquare; PIECE_TYPES_COUNT],
+    pub piece_square: [[ZobristPieceSquare; PIECE_TYPES_COUNT]; 2],
     pub black_to_move: ZobristNumber,
     pub castling_rights: [ZobristNumber; 4],
     pub ep_file: [ZobristNumber; 8],
@@ -98,14 +100,17 @@ impl ZobristNumbers {
     pub fn init() -> ZobristNumbers {
         let mut rng = rand::thread_rng();
         let mut result = ZobristNumbers {
-            piece_square: [[0; 64]; PIECE_TYPES_COUNT],
+            piece_square: [[[0; 64]; PIECE_TYPES_COUNT]; 2],
             black_to_move: 0,
             castling_rights: [0; 4],
             ep_file: [0; 8],
         };
         for piece in 1..PIECE_TYPES_COUNT {
             for square in 0..64 {
-                result.piece_square[piece][square] = rng.next_u64();
+                for colour in [BLACK, WHITE] {
+                    result.piece_square[colour as usize][piece][square] = rng.next_u64();
+                }
+                
             }
         }
         result.black_to_move = rng.next_u64();
@@ -118,6 +123,8 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
+    use crate::position0x88::Position;
+
     use super::*;
 
     #[test]
@@ -133,6 +140,8 @@ mod test {
             score: -288,
             node_type: NodeType::PV,
             created: SystemTime::now(),
+            #[cfg(debug_assertions)]
+            fen: "".to_owned()
         };
 
         tt1.store(item1);
@@ -148,5 +157,12 @@ mod test {
         let tt2 = TranspositionTable::new(1_000_000);
         assert_eq!(1 << 20, tt2.actual_size);
         assert_eq!((1 << 20) - 1, tt2.key_mask);
+    }
+
+    #[test]
+    fn test_hash() {
+        let pos1: Position = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
+        let pos2: Position = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
+        assert_ne!(pos1.hash_key(), pos2.hash_key());
     }
 }

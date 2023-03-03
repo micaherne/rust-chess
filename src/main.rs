@@ -5,9 +5,6 @@ pub mod perft;
 pub mod position0x88;
 pub mod search;
 pub mod transposition;
-// pub mod uci;
-
-// use std::env;
 
 use std::{collections::VecDeque, env, sync::mpsc, thread};
 

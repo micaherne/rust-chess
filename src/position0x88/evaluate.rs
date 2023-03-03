@@ -138,7 +138,6 @@ pub fn evaluate(position: &Position) -> Score {
         if piece_type == EMPTY {
             continue;
         }
-
         
         let colour = piece_colour(piece).unwrap();
         if colour == position.side_to_move {
@@ -159,7 +158,6 @@ pub fn evaluate(position: &Position) -> Score {
         let mtable: PieceSquareTable;
         let etable: PieceSquareTable;
         if piece_type == KING {
-            // TODO: This needs to take account of the game phase - currently just using the middlegame one.
             mtable = KING_PIECE_SQUARE_TABLE[MIDDLEGAME];
             etable = KING_PIECE_SQUARE_TABLE[ENDGAME];
         } else {
@@ -177,6 +175,8 @@ pub fn evaluate(position: &Position) -> Score {
 
     }
 
+    // TODO: This is probably wrong as it assumes that both scores are positive (I think)
+    // and won't really work when they're negative, or at least the order will be important.
     ((middlegame_score * (256 - phase)) + (endgame_score * phase)) / 256
     
 }

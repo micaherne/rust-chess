@@ -376,6 +376,7 @@ pub fn make_move(
     }
 
     position.side_to_move = opp_side_colour;
+    position.hash_key ^= position.zobrist_numbers.black_to_move;
 
     undo
 }
@@ -433,6 +434,7 @@ pub fn undo_move(position: &mut Position, undo: MoveUndo) {
         position.fullmove_number -= 1;
     }
     position.side_to_move = side_moved;
+    position.hash_key ^= position.zobrist_numbers.black_to_move;
 }
 
 #[derive(Debug, Clone)]

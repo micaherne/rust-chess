@@ -4,7 +4,9 @@ use std::{
     time::SystemTime,
 };
 
-use chess_uci::messages::{OutputMessage, InputMessage, GoSubcommand, LongAlgebraicNotationMove, InfoMessage, ScoreInfo};
+use chess_uci::messages::{
+    GoSubcommand, InfoMessage, InputMessage, LongAlgebraicNotationMove, OutputMessage, ScoreInfo,
+};
 
 use crate::{
     position0x88::{
@@ -15,6 +17,9 @@ use crate::{
     },
     transposition::{NodeType, TranspositionItem, TranspositionTable},
 };
+
+#[cfg(debug_assertions)]
+use crate::position0x88::notation::to_fen;
 
 pub type Depth = i16;
 
@@ -67,9 +72,17 @@ impl SearchTree {
     ) {
         let search_time_allowed = SearchTree::calculate_time_allowed(&position, &commands);
 
+        let mut depth = 5;
+
+        for cmd in commands {
+            match cmd {
+                GoSubcommand::Depth(x) => depth = *x as Depth,
+                _ => {}
+            }
+        }
         let mut tree = SearchTree::new(
             position,
-            5,
+            depth,
             search_time_allowed,
             output_sender,
             input_receiver,
@@ -158,7 +171,6 @@ impl SearchTree {
         depthleft: Depth,
         pline: &mut Line,
     ) -> Score {
-        
         self.nodes_searched += 1;
 
         if self.nodes_searched % 20000 == 0 {
@@ -167,6 +179,8 @@ impl SearchTree {
                 let message = res.unwrap();
                 match message {
                     InputMessage::Stop(_) => {
+                        // TODO: This doesn't work any more. Get the PV / best move
+                        // and send it before exiting.
                         self.timeout = true;
                         return 0;
                     }
@@ -191,6 +205,22 @@ impl SearchTree {
         if from_tt.is_some() {
             let from_tt_val = from_tt.unwrap();
             if from_tt_val.depth >= depthleft {
+                #[cfg(debug_assertions)]
+                {
+                    let to_fen = to_fen(&self.position);
+                    if from_tt_val.fen != to_fen {
+                        // Check it's not just the move number that's different.
+                        let frm: Vec<&str> = from_tt_val.fen.split_ascii_whitespace().take(5).collect();
+                        let to: Vec<&str> = to_fen.split_ascii_whitespace().take(5).collect();
+                        if frm.join(" ") != to.join(" ") {
+                            println!("{:#?}", from_tt_val);
+                            println!("{:#?}", self.position);
+                            println!("{}", to_fen);
+                        }
+                        
+                    }
+                }
+                
                 match from_tt_val.node_type {
                     NodeType::PV => return from_tt_val.score,
                     NodeType::All => {
@@ -216,6 +246,8 @@ impl SearchTree {
                 score: eval,
                 node_type: NodeType::PV,
                 created: SystemTime::now(),
+                #[cfg(debug_assertions)]
+                fen: to_fen(&self.position),
             };
             self.transposition_table.store(tt_item);
             return eval;
@@ -241,6 +273,7 @@ impl SearchTree {
                 mv.queening_piece,
             );
             let move_score = -self.search_ab(-beta, -alpha_local, depthleft - 1, &mut line);
+
             undo_move(&mut self.position, undo);
 
             if move_score >= beta {
@@ -251,8 +284,11 @@ impl SearchTree {
                     score: beta,
                     node_type: NodeType::Cut,
                     created: SystemTime::now(),
+                    #[cfg(debug_assertions)]
+                    fen: to_fen(&self.position),
                 };
                 self.transposition_table.store(tt_item);
+
                 return beta;
             }
 
@@ -298,6 +334,8 @@ impl SearchTree {
 
                         // Bail out if we have no more time.
                         if self.time_allowed != 0 && millis > (self.time_allowed as u128) {
+                            #[cfg(debug_assertions)]
+                            println!("Setting timeout!!!!!!!!");
                             self.timeout = true;
                             return 0;
                         }
@@ -327,6 +365,8 @@ impl SearchTree {
             score: alpha_local,
             node_type: tt_node_type,
             created: SystemTime::now(),
+            #[cfg(debug_assertions)]
+            fen: to_fen(&self.position),
         };
         self.transposition_table.store(tt_item);
 
@@ -336,7 +376,7 @@ impl SearchTree {
 
 #[cfg(test)]
 mod test {
-    use std::{sync::mpsc};
+    use std::sync::mpsc;
 
     use super::*;
 
@@ -376,7 +416,18 @@ mod test {
         assert_eq!("d5f6", mv.text);
     }
 
-/* 
+    #[test]
+    fn test_stupid_move() {
+        let pos: Position = "r2r1k2/ppp3pp/2p1p3/6P1/1b3B2/2N2P2/PP5P/2KRR3 b - - 0 20".into();
+        let (_tx1, rx1) = mpsc::channel::<InputMessage>();
+        let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
+        let tree = &mut SearchTree::new(pos, 5, 0, tx2, rx1);
+        let mv = tree.search();
+        println!("{:#?}", tree.pv);
+        assert_ne!("d8d7", mv.text);
+    }
+
+    /*
     #[test]
     fn test_search() {
         return;

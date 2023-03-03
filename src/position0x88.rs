@@ -51,16 +51,18 @@ pub struct Position {
 impl Position {
     pub fn set_square_to_piece(&mut self, square: SquareIndex, piece: Piece) {
         let new_piece_type = piece_type(piece);
-        let current_piece_type = piece_type(self.squares[square]);
+        let new_piece_colour = piece_colour(piece).unwrap_or(WHITE) as usize;
+        let current_piece_type = piece_type(self.square_piece(square));
+        let current_piece_colour = piece_colour(self.square_piece(square)).unwrap_or(WHITE) as usize;
 
         let square_index = index0x88to64(square);
 
-        self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_type as usize][square_index as usize];
-        self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_type as usize][square_index as usize];
+        self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_colour][current_piece_type as usize][square_index as usize];
+        self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_colour][new_piece_type as usize][square_index as usize];
 
         self.squares[square] = piece;
         if new_piece_type == KING {
-            self.king_squares[piece_colour(piece).unwrap() as usize] = square;
+            self.king_squares[new_piece_colour] = square;
         }
     }
 
@@ -291,7 +293,7 @@ impl Iterator for SquareIterator {
     }
 }
 
-pub fn square_iter() -> SquareIterator {
+pub fn square_iter() -> impl Iterator<Item = SquareIndex> {
     SquareIterator::default()
 }
 
