@@ -1,3 +1,4 @@
+pub mod bitboards;
 pub mod engine;
 pub mod fen;
 pub mod messages;

@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
-use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square};
+use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square, bitboards::{Bitboard, square_mask}};
 
-use self::{notation::piece_to_char};
+use self::{notation::piece_to_char, movegen::PIECE_TYPES_COUNT};
 
 pub mod evaluate;
 pub mod movegen;
+pub mod iters;
 pub mod notation;
 
 /// The type of a piece, without colour, e.g. knight, bishop etc.
@@ -20,6 +21,8 @@ pub type Piece = u8;
 // Colours.
 pub const WHITE: Colour = 0;
 pub const BLACK: Colour = 1;
+// To simplify bitboards - this is a pseudo-colour for empty squares.
+pub const NONE: Colour = 2;
 
 pub const COLOUR_BIT: u8 = 5;
 pub const COLOUR_BIT_MASK: u8 = 1 << COLOUR_BIT;
@@ -45,15 +48,19 @@ pub struct Position {
     halfmove_clock: u32,
     fullmove_number: u32,
     zobrist_numbers: ZobristNumbers,
-    hash_key: ZobristNumber
+    hash_key: ZobristNumber,
+    // bitboards
+    pub bb_pieces: [Bitboard; PIECE_TYPES_COUNT],
+    pub bb_colours: [Bitboard; 3]
+
 }
 
 impl Position {
     pub fn set_square_to_piece(&mut self, square: SquareIndex, piece: Piece) {
         let new_piece_type = piece_type(piece);
-        let new_piece_colour = piece_colour(piece).unwrap_or(WHITE) as usize;
+        let new_piece_colour = piece_colour(piece).unwrap_or(NONE) as usize;
         let current_piece_type = piece_type(self.square_piece(square));
-        let current_piece_colour = piece_colour(self.square_piece(square)).unwrap_or(WHITE) as usize;
+        let current_piece_colour = piece_colour(self.square_piece(square)).unwrap_or(NONE) as usize;
 
         let square_index = index0x88to64(square);
 
@@ -64,6 +71,13 @@ impl Position {
         if new_piece_type == KING {
             self.king_squares[new_piece_colour] = square;
         }
+
+        let mask = square_mask(square);
+        self.bb_pieces[current_piece_type as usize] ^= mask;
+        self.bb_colours[current_piece_colour] ^= mask;
+        self.bb_pieces[new_piece_type as usize] ^= mask;
+        self.bb_colours[new_piece_colour] ^= mask;
+
     }
 
     pub fn remove_from_square(&mut self, square: SquareIndex) {
@@ -157,7 +171,9 @@ impl Default for Position {
             halfmove_clock: 0,
             fullmove_number: 0,
             zobrist_numbers: ZobristNumbers::init(),
-            hash_key: 0
+            hash_key: 0,
+            bb_pieces: [0; PIECE_TYPES_COUNT],
+            bb_colours: [0; 3],
         }
     }
 }
@@ -216,12 +232,12 @@ impl CastlingRights {
 }
 
 #[inline]
-fn file(square: SquareIndex) -> RankOrFileIndex {
+pub const fn file(square: SquareIndex) -> RankOrFileIndex {
     square as u8 & 7
 }
 
 #[inline]
-fn rank(square: SquareIndex) -> RankOrFileIndex {
+pub const fn rank(square: SquareIndex) -> RankOrFileIndex {
     square as u8 >> 4
 }
 
@@ -268,7 +284,8 @@ pub fn opposite_colour(colour: Colour) -> Colour {
 }
 
 #[inline]
-pub fn index0x88to64(square: SquareIndex) -> u8 {
+pub const fn index0x88to64(square: SquareIndex) -> u8 {
+    debug_assert!(is_valid_square(square as i16));
     rank(square) * 8 + file(square)
 }
 

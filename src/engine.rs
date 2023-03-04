@@ -19,7 +19,7 @@ pub struct Engine {
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
-    undo_stack: Vec<MoveUndo>,
+    undo_stack: Vec<MoveUndo>, // the moves made to get to the position to be searched
 }
 
 struct EngineOptions {
@@ -43,7 +43,11 @@ impl Engine {
     }
 
     pub fn init(&mut self) {
+        #[cfg(debug_assertions)]
         println!("Initialising!");
+
+        // TODO: Do initialising stuff.
+
         self.initialised = true;
     }
 
@@ -90,7 +94,12 @@ impl Engine {
                     .sender
                     .send(OutputMessage::AvailableOptions(vec![]))
                     .unwrap(),
-                InputMessage::IsReady => self.sender.send(OutputMessage::Ready).unwrap(),
+                InputMessage::IsReady => {
+                    if self.initialised == false {
+                        self.init();
+                    }
+                    self.sender.send(OutputMessage::Ready).unwrap()
+                }
                 InputMessage::SetDebug(value) => self.set_option_debug(value),
                 InputMessage::NewGame => {
                     // TODO: Clear caches and stuff.
@@ -135,7 +144,12 @@ impl Engine {
                         .unwrap();
                     self.sender.send(OutputMessage::UciOk).unwrap();
                 }
-                InputMessage::SetOption(_, _) => todo!(),
+                InputMessage::SetOption(_, _) => {
+                    if self.initialised == false {
+                        self.init();
+                    }
+                    todo!()
+                }
                 InputMessage::PonderHit => todo!(),
             }
         }

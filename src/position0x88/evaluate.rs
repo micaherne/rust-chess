@@ -1,6 +1,12 @@
-use crate::position0x88::{Position, piece_colour, movegen::PIECE_TYPES_COUNT};
+use crate::position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position};
 
-use super::{piece_type, EMPTY, movegen::{side_to_move_in_check, can_evade_check}, SquareIndex, file, rank, WHITE, KING, square_iter, PAWN, KNIGHT, BISHOP, ROOK, QUEEN};
+use super::{
+    file,
+    movegen::{can_evade_check, side_to_move_in_check, quiesce_captures},
+    notation::{make_move, undo_move},
+    piece_type, rank, square_iter, SquareIndex, BISHOP, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK,
+    WHITE,
+};
 
 pub type Score = i32;
 
@@ -11,89 +17,59 @@ pub const CHECKMATE_SCORE_MAX: Score = 20000;
 const MIDDLEGAME: usize = 0;
 const ENDGAME: usize = 1;
 
-const PHASE: [i32;PIECE_TYPES_COUNT] = [0, 0, 1, 1, 2, 4, 0];
-const TOTAL_PHASE: i32 = PHASE[PAWN as usize] * 16 + PHASE[KNIGHT as usize] * 4 
-+ PHASE[BISHOP as usize] * 4 + PHASE[ROOK as usize] * 4 + PHASE[QUEEN as usize] * 2;
+const PHASE: [i32; PIECE_TYPES_COUNT] = [0, 0, 1, 1, 2, 4, 0];
+const TOTAL_PHASE: i32 = PHASE[PAWN as usize] * 16
+    + PHASE[KNIGHT as usize] * 4
+    + PHASE[BISHOP as usize] * 4
+    + PHASE[ROOK as usize] * 4
+    + PHASE[QUEEN as usize] * 2;
 
 // TODO: This should be more sensible. It's basically just a fudge to use piece square tables
-// from https://www.chessprogramming.org/Simplified_Evaluation_Function without having to 
+// from https://www.chessprogramming.org/Simplified_Evaluation_Function without having to
 // reformat them.
 
-const PIECE_SQUARE_TABLE: [PieceSquareTable;6] = [
+const PIECE_SQUARE_TABLE: [PieceSquareTable; 6] = [
     [0; 64],
     [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
-        10, 10, 20, 30, 30, 20, 10, 10,
-        5,  5, 10, 25, 25, 10,  5,  5,
-        0,  0,  0, 20, 20,  0,  0,  0,
-        5, -5,-10,  0,  0,-10, -5,  5,
-        5, 10, 10,-20,-20, 10, 10,  5,
-        0,  0,  0,  0,  0,  0,  0,  0
+        0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5,
+        5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10,
+        -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0,
     ],
     [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        5, 10, 10, 10, 10, 10, 10,  5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-       -5,  0,  0,  0,  0,  0,  0, -5,
-        0,  0,  0,  5,  5,  0,  0,  0
+        0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0,
+        0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0,
+        -5, 0, 0, 0, 5, 5, 0, 0, 0,
     ],
     [
-        -50,-40,-30,-30,-30,-30,-40,-50,
-        -40,-20,  0,  0,  0,  0,-20,-40,
-        -30,  0, 10, 15, 15, 10,  0,-30,
-        -30,  5, 15, 20, 20, 15,  5,-30,
-        -30,  0, 15, 20, 20, 15,  0,-30,
-        -30,  5, 10, 15, 15, 10,  5,-30,
-        -40,-20,  0,  5,  5,  0,-20,-40,
-        -50,-40,-30,-30,-30,-30,-40,-50,
+        -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15,
+        10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15,
+        15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
     ],
     [
-        -20,-10,-10,-10,-10,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5, 10, 10,  5,  0,-10,
-        -10,  5,  5, 10, 10,  5,  5,-10,
-        -10,  0, 10, 10, 10, 10,  0,-10,
-        -10, 10, 10, 10, 10, 10, 10,-10,
-        -10,  5,  0,  0,  0,  0,  5,-10,
-        -20,-10,-10,-10,-10,-10,-10,-20,
+        -20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5,
+        0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10,
+        10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20,
     ],
     [
-        -20,-10,-10, -5, -5,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5,  5,  5,  5,  0,-10,
-        -5,  0,  5,  5,  5,  5,  0, -5,
-        0,  0,  5,  5,  5,  5,  0, -5,
-        -10,  5,  5,  5,  5,  5,  0,-10,
-        -10,  0,  5,  0,  0,  0,  0,-10,
-        -20,-10,-10, -5, -5,-10,-10,-20
-    ]
+        -20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0,
+        -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0,
+        5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20,
+    ],
 ];
 
 const KING_PIECE_SQUARE_TABLE: [PieceSquareTable; 2] = [
     [
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -20,-30,-30,-40,-40,-30,-30,-20,
-        -10,-20,-20,-20,-20,-20,-20,-10,
-        20, 20,  0,  0,  0,  0, 20, 20,
-        20, 30, 10,  0,  0, 10, 30, 20
+        -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40,
+        -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40,
+        -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20,
+        30, 10, 0, 0, 10, 30, 20,
     ],
     [
-        -50,-40,-30,-20,-20,-30,-40,-50,
-        -30,-20,-10,  0,  0,-10,-20,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-30,  0,  0,  0,  0,-30,-30,
-        -50,-30,-30,-30,-30,-30,-30,-50
-    ]
+        -50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20,
+        30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 30, 40, 40, 30, -10,
+        -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30,
+        -30, -30, -30, -30, -50,
+    ],
 ];
 
 fn piece_square_index(index0x88: SquareIndex) -> SquareIndex {
@@ -118,7 +94,6 @@ fn game_phase(position: &Position) -> i32 {
 pub const PIECE_VALUES: [Score; PIECE_TYPES_COUNT] = [0, 100, 500, 300, 325, 900, 2_000_000];
 
 pub fn evaluate(position: &Position) -> Score {
-
     let mut middlegame_score: Score = 0;
     let mut endgame_score: Score = 0;
 
@@ -132,13 +107,12 @@ pub fn evaluate(position: &Position) -> Score {
 
     // Evaluate material.
     for piece_square in square_iter() {
-
         let piece = position.squares[piece_square];
         let piece_type = piece_type(piece);
         if piece_type == EMPTY {
             continue;
         }
-        
+
         let colour = piece_colour(piece).unwrap();
         if colour == position.side_to_move {
             middlegame_score += PIECE_VALUES[piece_type as usize] as Score;
@@ -172,13 +146,45 @@ pub fn evaluate(position: &Position) -> Score {
             middlegame_score -= mtable[piece_square_table_index];
             endgame_score -= etable[piece_square_table_index];
         }
-
     }
 
     // TODO: This is probably wrong as it assumes that both scores are positive (I think)
     // and won't really work when they're negative, or at least the order will be important.
     ((middlegame_score * (256 - phase)) + (endgame_score * phase)) / 256
-    
+}
+
+pub fn quiesce(position: &mut Position, alpha: Score, beta: Score) -> Score {
+    let mut alpha_local = alpha;
+    let stand_pat = evaluate(&position);
+    if stand_pat > beta {
+        return beta;
+    }
+    if alpha_local < stand_pat {
+        alpha_local = stand_pat;
+    }
+
+    for capture in quiesce_captures(position) {
+        let undo = make_move(
+            position,
+            capture.from_index,
+            capture.to_index,
+            capture.queening_piece,
+        );
+
+        let score = -quiesce(position, -beta, -alpha);
+
+        undo_move(position, undo);
+
+        if score >= beta {
+            return beta;
+        }
+
+        if score > alpha_local {
+            alpha_local = score;
+        }
+    }
+
+    alpha_local
 }
 
 #[cfg(test)]

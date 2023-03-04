@@ -6,7 +6,7 @@ use super::{
     file,
     notation::{piece_type_to_char, square_index_to_str, KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
-    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, square_iter,
+    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, iters::square_iterator,
 };
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
@@ -78,9 +78,9 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 
     // Check evasions are filtered out at the end.
 
-    for piece_square in square_iter() {
+    for piece_square in square_iterator() {
         
-        let piece = position.squares[piece_square];
+        let piece = position.square_piece(piece_square);
 
         if piece == EMPTY {
             continue;
@@ -1015,6 +1015,10 @@ pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
     } else {
         None
     }
+}
+
+pub fn quiesce_captures(_position: &Position) -> impl Iterator<Item = Move> {
+    vec![].into_iter()
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use chess_uci::messages::{
 
 use crate::{
     position0x88::{
-        evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
+        evaluate::{Score, CHECKMATE_SCORE_MAX, quiesce},
         movegen::{generate_moves, side_to_move_in_check, Move},
         notation::{make_move, undo_move},
         Position, WHITE,
@@ -213,9 +213,7 @@ impl SearchTree {
                         let frm: Vec<&str> = from_tt_val.fen.split_ascii_whitespace().take(5).collect();
                         let to: Vec<&str> = to_fen.split_ascii_whitespace().take(5).collect();
                         if frm.join(" ") != to.join(" ") {
-                            println!("{:#?}", from_tt_val);
-                            println!("{:#?}", self.position);
-                            println!("{}", to_fen);
+                            println!("Hash collision: {} {}", from_tt_val.fen, to_fen);
                         }
                         
                     }
@@ -238,7 +236,7 @@ impl SearchTree {
         }
 
         if depthleft == 0 {
-            let eval = evaluate(&self.position);
+            let eval = quiesce(&mut self.position, alpha_local, beta); // evaluate(&self.position);
             let tt_item = TranspositionItem {
                 key: self.position.hash_key(),
                 best_move: None,

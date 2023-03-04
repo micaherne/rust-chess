@@ -5,7 +5,7 @@ use rand::RngCore;
 use crate::{
     position0x88::{
         evaluate::Score,
-        movegen::{Move, PIECE_TYPES_COUNT}, BLACK, WHITE,
+        movegen::{Move, PIECE_TYPES_COUNT}, BLACK, WHITE, NONE,
     },
     search::Depth,
 };
@@ -90,7 +90,7 @@ pub enum NodeType {
 
 #[derive(Clone, Copy)]
 pub struct ZobristNumbers {
-    pub piece_square: [[ZobristPieceSquare; PIECE_TYPES_COUNT]; 2],
+    pub piece_square: [[ZobristPieceSquare; PIECE_TYPES_COUNT]; 3],
     pub black_to_move: ZobristNumber,
     pub castling_rights: [ZobristNumber; 4],
     pub ep_file: [ZobristNumber; 8],
@@ -98,16 +98,17 @@ pub struct ZobristNumbers {
 
 impl ZobristNumbers {
     pub fn init() -> ZobristNumbers {
+
         let mut rng = rand::thread_rng();
         let mut result = ZobristNumbers {
-            piece_square: [[[0; 64]; PIECE_TYPES_COUNT]; 2],
+            piece_square: [[[0; 64]; PIECE_TYPES_COUNT]; 3],
             black_to_move: 0,
             castling_rights: [0; 4],
             ep_file: [0; 8],
         };
         for piece in 1..PIECE_TYPES_COUNT {
             for square in 0..64 {
-                for colour in [BLACK, WHITE] {
+                for colour in [BLACK, WHITE, NONE] {
                     result.piece_square[colour as usize][piece][square] = rng.next_u64();
                 }
                 
