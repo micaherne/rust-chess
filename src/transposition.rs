@@ -32,12 +32,8 @@ pub struct TranspositionTable {
 
 impl TranspositionTable {
     pub fn new(requested_size: usize) -> Self {
-        let mut i = 0;
-        let mut actual_size = 1 << i;
-        while actual_size < requested_size {
-            i += 1;
-            actual_size <<= 1;
-        }
+        let actual_size = requested_size.next_power_of_two();
+
         let key_mask = (actual_size - 1) as ZobristNumber;
         let items = HashMap::with_capacity(actual_size);
         Self {
@@ -124,7 +120,7 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
-    use crate::position0x88::Position;
+    use crate::position0x88::{Position, notation::{make_move, undo_move}};
 
     use super::*;
 
@@ -165,5 +161,14 @@ mod test {
         let pos1: Position = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
         let pos2: Position = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
+
+        let mut pos1: Position = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3".into();
+        let pos2: Position = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3".into();
+        assert_ne!(pos1.hash_key(), pos2.hash_key());
+
+        let pre1 = pos1.hash_key();
+        let undo = make_move(&mut pos1, 7, 23, None);
+        undo_move(&mut pos1, undo);
+        assert_eq!(pre1, pos1.hash_key());
     }
 }

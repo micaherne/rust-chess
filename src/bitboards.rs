@@ -1,9 +1,10 @@
-use crate::position0x88::{
-    index0x88to64, movegen::PIECE_TYPES_COUNT, SquareIndex, BLACK, WHITE,
-};
+pub mod movegen;
+
+use crate::position0x88::{index0x88to64, movegen::PIECE_TYPES_COUNT, SquareIndex, BLACK, WHITE, PieceType, BISHOP, QUEEN, ROOK};
 
 pub type Bitboard = u64;
 pub type SquareIndex64 = u8;
+pub type Direction = i8;
 
 /// Index for a file, rank, diagonal or antidiagonal.
 pub type LineIndex = u8;
@@ -12,16 +13,54 @@ pub type EightBitboards = [Bitboard; 8];
 pub type SixteenBitboards = [Bitboard; 16];
 pub type SixtyFourBitboards = [Bitboard; 64];
 
-pub const DIR_KNIGHT: [i8; 8] = [-17, -15, -10, -6, 6, 10, 15, 17];
+pub const DIR_KNIGHT: [Direction; 8] = [-17, -15, -10, -6, 6, 10, 15, 17];
 
 /// Directions. Linear then diagonal.
 pub const DIR_ALL_SLIDERS: [i8; 8] = [-1, 1, 8, -8, 7, -7, 9, -9];
+pub const fn dir_index(dir: i8) -> usize {
+    match dir {
+        -1 => 0,
+        1 => 1,
+        8 => 2,
+        -8 => 3,
+        7 => 4,
+        -7 => 5,
+        9 => 6,
+        -9 => 7,
+        _ => panic!("Invalid direction")
+    }
+}
+
+pub const fn is_linear(dir: Direction) -> bool {
+    dir.abs() == 1 || dir.abs() == 8
+}
+
+pub const fn is_diagonal(dir: Direction) -> bool {
+    dir.abs() == 7 || dir.abs() == 9
+}
+
+pub const fn is_slider(piece_type: PieceType) -> bool {
+    piece_type == BISHOP || piece_type == ROOK || piece_type == QUEEN
+}
+
+pub const fn slides_in_dir(piece_type: PieceType, dir: i8) -> bool {
+    debug_assert!(is_slider(piece_type));
+
+    let dir_index = dir_index(dir);
+    match piece_type {
+        BISHOP => dir_index > 3,
+        ROOK => dir_index < 4,
+        QUEEN => true,
+        _ => false
+    }
+}
 
 pub const RANK_MASK: EightBitboards = init_rank_masks();
 pub const FILE_MASK: EightBitboards = init_file_masks();
 pub const DIAGONAL_MASK: SixteenBitboards = init_diagonal_masks();
 pub const ANTIDIAGONAL_MASK: SixteenBitboards = init_antidiagonal_masks();
 
+/// Bitboards of squares in a given direction from a square.
 pub const SLIDER_DIRECTION_SQUARE: [SixtyFourBitboards; DIR_ALL_SLIDERS.len()] =
     init_slider_dir_squares();
 
@@ -42,8 +81,68 @@ pub const PIECE_ATTACK_SQUARES: [SixtyFourBitboards; PIECE_TYPES_COUNT] = [
     KNIGHT_ATTACK_SQUARES,
     BISHOP_ATTACK_SQUARES,
     QUEEN_ATTACK_SQUARES,
-    KING_ATTACK_SQUARES
+    KING_ATTACK_SQUARES,
 ];
+
+#[inline]
+pub fn squares_from_bitboard(bitboard: Bitboard) -> Vec<SquareIndex64> {
+    let mut bb = bitboard;
+    let mut result: Vec<SquareIndex64> = vec![];
+    while bb != 0 {
+        result.push(bitboard.trailing_zeros() as SquareIndex64);
+        bb &= bb - 1;
+    }
+    result
+}
+
+/// Get the highest set bit.
+/// Note that this will panic if the bitboard is zero so we must check that before calling.
+#[inline]
+pub fn highest_set_bit(bitboard: Bitboard) -> SquareIndex64 {
+    debug_assert!(bitboard != 0);
+
+    bitboard.ilog2() as SquareIndex64
+}
+
+/// Get the lowest set bit.
+/// Note that this will return an invalid value (64) if the bitboard is zero so we must check that before calling.
+/// (We don't check for zero in this function for speed; it's usually known in calling code if it is zero.)
+#[inline]
+pub fn lowest_set_bit(bitboard: Bitboard) -> SquareIndex64 {
+    debug_assert!(bitboard != 0);
+
+    bitboard.trailing_zeros() as SquareIndex64
+}
+
+/// Take each bit of a bitboard and return a vector of indices for them.
+macro_rules! unwrap_bitboard {
+    ($bb:ident) => {{
+        let mut x = $bb as Bitboard;
+        let mut result: Vec<SquareIndex64> = vec![];
+        while x != 0 {
+            result.push(x.trailing_zeros() as SquareIndex64);
+            x &= x - 1;
+        }
+        result
+    }};
+
+    ($bb:ident:reverse) => {{
+        let mut b = $bb as Bitboard;
+        let mut result: Vec<SquareIndex64> = vec![];
+        while b != 0 {
+            let x = 63 - b.leading_zeros();
+            result.push(x as SquareIndex64);
+            b &= (1 << x) - 1;
+        }
+        result
+    }};
+
+    ($bb:expr) => {{
+        let b = $bb as Bitboard;
+        unwrap_bitboard!(b)
+    }};
+}
+pub(crate) use unwrap_bitboard;
 
 const fn init_rank_masks() -> EightBitboards {
     let mut result = [0; 8];
@@ -263,8 +362,12 @@ const fn init_king_attacks() -> SixtyFourBitboards {
 }
 
 #[inline]
-pub const fn square_mask(square: SquareIndex) -> Bitboard {
+pub const fn square_mask0x88(square: SquareIndex) -> Bitboard {
     1 << index0x88to64(square)
+}
+
+pub const fn square_mask64(square: SquareIndex64) -> Bitboard {
+    1 << square
 }
 
 #[inline]
@@ -316,8 +419,6 @@ mod test {
 
     #[test]
     fn test_bitboard_constants() {
-        
-    
         assert_eq!(9, DIRECTION_FROM_TO[17][62]);
         assert_eq!(0, DIRECTION_FROM_TO[17][61]);
 
@@ -326,5 +427,30 @@ mod test {
         assert_eq!(0x102040810, ANTIDIAGONAL_MASK[4]);
         assert_eq!(0x1400000000, PAWN_ATTACK_SQUARES[WHITE as usize][27]);
         assert_eq!(0x2, PAWN_ATTACK_SQUARES[BLACK as usize][8]);
+    }
+
+    #[test]
+    fn test_unwrap_bitboard() {
+        assert_eq!(
+            vec![19, 44, 49],
+            unwrap_bitboard!(0x2100000080000 as Bitboard)
+        );
+        let x1 = 0x2100000080000 as Bitboard;
+        assert_eq!(
+            vec![49, 44, 19],
+            unwrap_bitboard!(x1:reverse)
+        );
+    }
+
+    #[test]
+    fn test_highest_set_bit() {
+        assert_eq!(0, highest_set_bit(1));
+        assert_eq!(63, highest_set_bit(Bitboard::MAX));
+    }
+
+    #[test]
+    fn test_lowest_set_bit() {
+        assert_eq!(0, lowest_set_bit(1));
+        assert_eq!(0, lowest_set_bit(Bitboard::MAX));
     }
 }

@@ -1,11 +1,11 @@
-use crate::position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position};
+use crate::{position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position}, bitboards::movegen::{White, Black}};
 
 use super::{
     file,
-    movegen::{can_evade_check, side_to_move_in_check, quiesce_captures},
+    movegen::{can_evade_check, side_to_move_in_check, quiesce_captures, create_pawn_moves, Move},
     notation::{make_move, undo_move},
     piece_type, rank, square_iter, SquareIndex, BISHOP, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK,
-    WHITE,
+    WHITE, index64to0x88,
 };
 
 pub type Score = i32;
@@ -161,6 +161,21 @@ pub fn quiesce(position: &mut Position, alpha: Score, beta: Score) -> Score {
     }
     if alpha_local < stand_pat {
         alpha_local = stand_pat;
+    }
+
+    let mut q_moves = vec![];
+    let moves = if position.side_to_move == WHITE {
+        position.quiescence_moves::<White>()
+    } else {
+        position.quiescence_moves::<Black>()
+    };
+
+    for qm in moves {
+        if qm.is_queening {
+            create_pawn_moves(index64to0x88(qm.from), index64to0x88(qm.to), qm.is_queening, &mut q_moves);
+        } else {
+            q_moves.push(Move { from_index: index64to0x88(qm.from), to_index: index64to0x88(qm.to), queening_piece: None });
+        }
     }
 
     for capture in quiesce_captures(position) {

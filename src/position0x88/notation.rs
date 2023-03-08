@@ -428,7 +428,7 @@ pub fn undo_move(position: &mut Position, undo: MoveUndo) {
     position.set_square_to_piece(capture_square, undo.captured_piece);
 
     position.set_ep_square(undo.ep_square);
-    position.castling_rights = undo.castling_rights;
+    position.set_castling_rights(undo.castling_rights);
     position.halfmove_clock = undo.halfmove_clock;
     if position.side_to_move == WHITE {
         position.fullmove_number -= 1;

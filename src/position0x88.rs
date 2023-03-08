@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square, bitboards::{Bitboard, square_mask}};
+use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square, bitboards::{Bitboard, square_mask0x88, SquareIndex64, self}};
 
 use self::{notation::piece_to_char, movegen::PIECE_TYPES_COUNT};
 
@@ -41,10 +41,10 @@ pub type RankOrFileIndex = u8;
 #[derive(Clone, Copy)]
 pub struct Position {
     squares: [PieceType; 128],
-    king_squares: [SquareIndex; 2],
-    side_to_move: Colour,
+    pub king_squares: [SquareIndex; 2],
+    pub side_to_move: Colour,
     castling_rights: CastlingRights,
-    ep_square: SquareIndex,
+    pub ep_square: SquareIndex,
     halfmove_clock: u32,
     fullmove_number: u32,
     zobrist_numbers: ZobristNumbers,
@@ -72,7 +72,7 @@ impl Position {
             self.king_squares[new_piece_colour] = square;
         }
 
-        let mask = square_mask(square);
+        let mask = square_mask0x88(square);
         self.bb_pieces[current_piece_type as usize] ^= mask;
         self.bb_colours[current_piece_colour] ^= mask;
         self.bb_pieces[new_piece_type as usize] ^= mask;
@@ -92,6 +92,16 @@ impl Position {
             self.hash_key ^= self.zobrist_numbers.ep_file[file(square) as usize];
         }
         self.ep_square = square;
+    }
+
+    pub fn set_castling_rights(&mut self, castling_rights: CastlingRights) {
+        for i in 0..4 {
+            let mask = 1 << i;
+            if (self.castling_rights.flags & mask) != castling_rights.flags & mask {
+                self.hash_key ^= self.zobrist_numbers.castling_rights[i];
+            }
+        }
+        self.castling_rights = castling_rights;
     }
 
     pub fn set_side_to_move(&mut self, colour: Colour) {
@@ -284,9 +294,14 @@ pub fn opposite_colour(colour: Colour) -> Colour {
 }
 
 #[inline]
-pub const fn index0x88to64(square: SquareIndex) -> u8 {
+pub const fn index0x88to64(square: SquareIndex) -> SquareIndex64 {
     debug_assert!(is_valid_square(square as i16));
     rank(square) * 8 + file(square)
+}
+
+#[inline]
+pub const fn index64to0x88(square: SquareIndex64) -> SquareIndex {
+    (bitboards::rank(square) * 16 + bitboards::file(square)) as SquareIndex
 }
 
 #[derive(Default)]
