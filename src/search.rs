@@ -9,9 +9,13 @@ use chess_uci::messages::{
 };
 
 use crate::{
+    bitboards::movegen::{Black, White},
     position0x88::{
-        evaluate::{Score, CHECKMATE_SCORE_MAX, quiesce},
-        movegen::{generate_moves, side_to_move_in_check, Move},
+        evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
+        index64to0x88,
+        movegen::{
+            create_pawn_moves, generate_moves, quiesce_captures, side_to_move_in_check, Move,
+        },
         notation::{make_move, undo_move},
         Position, WHITE,
     },
@@ -34,6 +38,7 @@ pub struct SearchTree {
     transposition_table: TranspositionTable,
     pv: Line,
     nodes_searched: usize,
+    quiescence_nodes: usize,
     time_allowed: usize, // in milliseconds - zero is infinity
     timeout: bool,       // have we run out of time and need to return immediately?
     search_start: SystemTime,
@@ -55,6 +60,7 @@ impl SearchTree {
             transposition_table: TranspositionTable::new(TRANSPOSITION_TABLE_SIZE),
             pv: vec![],
             nodes_searched: 0,
+            quiescence_nodes: 0,
             time_allowed,
             timeout: false,
             search_start: SystemTime::now(),
@@ -210,15 +216,15 @@ impl SearchTree {
                     let to_fen = to_fen(&self.position);
                     if from_tt_val.fen != to_fen {
                         // Check it's not just the move number that's different.
-                        let frm: Vec<&str> = from_tt_val.fen.split_ascii_whitespace().take(5).collect();
+                        let frm: Vec<&str> =
+                            from_tt_val.fen.split_ascii_whitespace().take(5).collect();
                         let to: Vec<&str> = to_fen.split_ascii_whitespace().take(5).collect();
                         if frm.join(" ") != to.join(" ") {
                             println!("Hash collision: {} {}", from_tt_val.fen, to_fen);
                         }
-                        
                     }
                 }
-                
+
                 match from_tt_val.node_type {
                     NodeType::PV => return from_tt_val.score,
                     NodeType::All => {
@@ -236,7 +242,7 @@ impl SearchTree {
         }
 
         if depthleft == 0 {
-            let eval = quiesce(&mut self.position, alpha_local, beta); // evaluate(&self.position);
+            let eval = evaluate(&self.position); // self.quiesce(alpha_local, beta);
             let tt_item = TranspositionItem {
                 key: self.position.hash_key(),
                 best_move: None,
@@ -348,6 +354,14 @@ impl SearchTree {
                         info_messages.push(InfoMessage::Depth(self.search_depth as usize));
                     }
 
+                    #[cfg(debug_assertions)]
+                    self.sender
+                        .send(OutputMessage::Info(vec![InfoMessage::String(format!(
+                            "quiescence nodes {}",
+                            self.quiescence_nodes
+                        ))]))
+                        .unwrap();
+
                     // Send it to the output.
                     self.sender
                         .send(OutputMessage::Info(info_messages))
@@ -367,6 +381,66 @@ impl SearchTree {
             fen: to_fen(&self.position),
         };
         self.transposition_table.store(tt_item);
+
+        alpha_local
+    }
+
+    pub fn quiesce(&mut self, alpha: Score, beta: Score) -> Score {
+        self.quiescence_nodes += 1;
+
+        let mut alpha_local = alpha;
+        let stand_pat = evaluate(&self.position);
+        if stand_pat > beta {
+            return beta;
+        }
+        if alpha_local < stand_pat {
+            alpha_local = stand_pat;
+        }
+
+        let mut q_moves = vec![];
+        let moves = if self.position.side_to_move == WHITE {
+            self.position.quiescence_moves::<White>()
+        } else {
+            self.position.quiescence_moves::<Black>()
+        };
+
+        for qm in moves {
+            if qm.is_queening {
+                create_pawn_moves(
+                    index64to0x88(qm.from),
+                    index64to0x88(qm.to),
+                    qm.is_queening,
+                    &mut q_moves,
+                );
+            } else {
+                q_moves.push(Move {
+                    from_index: index64to0x88(qm.from),
+                    to_index: index64to0x88(qm.to),
+                    queening_piece: None,
+                });
+            }
+        }
+
+        for capture in quiesce_captures(&mut self.position) {
+            let undo = make_move(
+                &mut self.position,
+                capture.from_index,
+                capture.to_index,
+                capture.queening_piece,
+            );
+
+            let score = -self.quiesce(-beta, -alpha);
+
+            undo_move(&mut self.position, undo);
+
+            if score >= beta {
+                return beta;
+            }
+
+            if score > alpha_local {
+                alpha_local = score;
+            }
+        }
 
         alpha_local
     }

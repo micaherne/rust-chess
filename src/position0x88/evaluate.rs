@@ -1,11 +1,10 @@
-use crate::{position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position}, bitboards::movegen::{White, Black}};
+use crate::{position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position}};
 
 use super::{
     file,
-    movegen::{can_evade_check, side_to_move_in_check, quiesce_captures, create_pawn_moves, Move},
-    notation::{make_move, undo_move},
+    movegen::{can_evade_check, side_to_move_in_check},
     piece_type, rank, square_iter, SquareIndex, BISHOP, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK,
-    WHITE, index64to0x88,
+    WHITE,
 };
 
 pub type Score = i32;
@@ -151,55 +150,6 @@ pub fn evaluate(position: &Position) -> Score {
     // TODO: This is probably wrong as it assumes that both scores are positive (I think)
     // and won't really work when they're negative, or at least the order will be important.
     ((middlegame_score * (256 - phase)) + (endgame_score * phase)) / 256
-}
-
-pub fn quiesce(position: &mut Position, alpha: Score, beta: Score) -> Score {
-    let mut alpha_local = alpha;
-    let stand_pat = evaluate(&position);
-    if stand_pat > beta {
-        return beta;
-    }
-    if alpha_local < stand_pat {
-        alpha_local = stand_pat;
-    }
-
-    let mut q_moves = vec![];
-    let moves = if position.side_to_move == WHITE {
-        position.quiescence_moves::<White>()
-    } else {
-        position.quiescence_moves::<Black>()
-    };
-
-    for qm in moves {
-        if qm.is_queening {
-            create_pawn_moves(index64to0x88(qm.from), index64to0x88(qm.to), qm.is_queening, &mut q_moves);
-        } else {
-            q_moves.push(Move { from_index: index64to0x88(qm.from), to_index: index64to0x88(qm.to), queening_piece: None });
-        }
-    }
-
-    for capture in quiesce_captures(position) {
-        let undo = make_move(
-            position,
-            capture.from_index,
-            capture.to_index,
-            capture.queening_piece,
-        );
-
-        let score = -quiesce(position, -beta, -alpha);
-
-        undo_move(position, undo);
-
-        if score >= beta {
-            return beta;
-        }
-
-        if score > alpha_local {
-            alpha_local = score;
-        }
-    }
-
-    alpha_local
 }
 
 #[cfg(test)]

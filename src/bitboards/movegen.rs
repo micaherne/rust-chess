@@ -60,8 +60,6 @@ impl Position {
         self.bb_colours[Colour::colour_index()] & self.bb_pieces[piece_type as usize]
     }
 
-    // TODO: This should all take the pin mask into account, but doesn't.
-
     pub fn quiescence_moves<Colour: ColourType>(&self) -> Vec<QuiescenceMove> {
         let mut result = vec![];
         let opposite_pieces = self.bb_colours[Colour::opposite_colour_index()];
