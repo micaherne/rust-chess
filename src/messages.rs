@@ -1,4 +1,6 @@
-use crate::position0x88::{notation::LongAlgebraicNotationMove, movegen::Move, evaluate::Score};
+use chess_uci::messages::LongAlgebraicNotationMove;
+
+use crate::position::{evaluate::Score, movegen::Move};
 
 pub enum InputMessage {
     Quit,
@@ -10,7 +12,7 @@ pub enum InputMessage {
     IsReady,
     NewGame,
     Go(Vec<GoSubcommand>),
-    Stop(bool) // argument is whether to send the best move or not
+    Stop(bool), // argument is whether to send the best move or not
 }
 
 pub enum OutputMessage {
@@ -18,7 +20,7 @@ pub enum OutputMessage {
     Ready,
     Quitting,
     BestMove(LongAlgebraicNotationMove, Option<LongAlgebraicNotationMove>),
-    Info(Vec<InfoMessage>)
+    Info(Vec<InfoMessage>),
 }
 
 pub enum InfoMessage {
@@ -38,14 +40,14 @@ pub enum InfoMessage {
     CpuLoad(usize),
     String(String),
     Refutation(Move, Vec<Move>),
-    CurrentLine(usize, Vec<Move>)
+    CurrentLine(usize, Vec<Move>),
 }
 
 pub enum ScoreInfo {
-    Centipawns(Score), 
+    Centipawns(Score),
     Mate(usize),
     LowerBound,
-    UpperBound
+    UpperBound,
 }
 
 pub enum GoSubcommand {
@@ -60,10 +62,7 @@ pub enum GoSubcommand {
     Nodes(u64),
     Mate(u64),
     MoveTime(u64),
-    Infinite
+    Infinite,
 }
 
-
-pub struct AvailableOption {
-
-}
+pub struct AvailableOption {}

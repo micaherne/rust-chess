@@ -1,20 +1,21 @@
 use std::{
     collections::{HashMap, VecDeque},
     io::{BufRead, BufReader, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio}, u8,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    u8,
 };
 
-use crate::position0x88::{
-    movegen::generate_moves,
-    notation::{
-        make_move, make_moves, set_from_fen, to_fen, undo_move,
-        LongAlgebraicNotationMove,
-    },
+use chess_uci::messages::LongAlgebraicNotationMove;
+
+use crate::position::{
+    make_moves::MakeMoves,
+    movegen::GenerateMoves,
+    notation::{set_from_fen, to_fen},
     Position,
 };
 
 #[cfg(debug_assertions)]
-use crate::position0x88::notation::square_index_to_str;
+use crate::position::notation::square_index_to_str;
 
 pub fn perft(position: &mut Position, depth: u16) -> usize {
     if depth == 0 {
@@ -25,7 +26,7 @@ pub fn perft(position: &mut Position, depth: u16) -> usize {
 
     assert!(depth > 0);
 
-    let moves = generate_moves(position);
+    let moves = position.generate_moves();
     let mut nodes = 0;
 
     if depth == 1 {
@@ -33,9 +34,9 @@ pub fn perft(position: &mut Position, depth: u16) -> usize {
     }
 
     for m in moves {
-        let undo = make_move(position, m.from_index, m.to_index, m.queening_piece);
+        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
         nodes += perft(position, depth - 1);
-        undo_move(position, undo);
+        position.undo_move(undo);
     }
 
     nodes
@@ -44,41 +45,44 @@ pub fn perft(position: &mut Position, depth: u16) -> usize {
 pub fn divide(position: &mut Position, depth: u16) -> DivideResults {
     let mut result = DivideResults::default();
 
-    let moves = generate_moves(&position);
+    let moves = position.generate_moves();
 
     let mut total = 0;
 
     for m in moves {
-
         #[cfg(debug_assertions)]
         let before_fen = to_fen(position);
 
         #[cfg(debug_assertions)]
         let before_hash = position.hash_key();
 
-        let undo = make_move(position, m.from_index, m.to_index, m.queening_piece);
+        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
         let nodes = perft(position, depth - 1);
         total += nodes;
-        undo_move(position, undo);
+        position.undo_move(undo);
 
         #[cfg(debug_assertions)]
         {
             let after_fen = to_fen(position);
 
             if before_fen != after_fen {
-                panic!("Move: {}{}, before: {}, after: {}",
+                panic!(
+                    "Move: {}{}, before: {}, after: {}",
                     square_index_to_str(m.from_index),
                     square_index_to_str(m.to_index),
-                    before_fen, after_fen
+                    before_fen,
+                    after_fen
                 );
             }
 
             let after_hash = position.hash_key();
             if before_hash != after_hash {
-                panic!("Move: {}{}, before: {}, after: {}",
+                panic!(
+                    "Move: {}{}, before: {}, after: {}",
                     square_index_to_str(m.from_index),
                     square_index_to_str(m.to_index),
-                    before_hash, after_hash
+                    before_hash,
+                    after_hash
                 );
             }
         }
@@ -175,7 +179,7 @@ fn get_diff(
         })
         .collect();
 
-    make_moves(&mut pos, &l);
+    pos.make_moves(&l);
 
     let f = to_fen(&pos);
     println!("{}", f);
@@ -307,15 +311,15 @@ pub fn run_divide(args: VecDeque<String>) {
         return;
     }
 
-    let moves = generate_moves(&position);
+    let moves = position.generate_moves();
 
     let mut total = 0;
 
     for m in moves {
-        let undo = make_move(&mut position, m.from_index, m.to_index, m.queening_piece);
+        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
         let nodes = perft(&mut position, depth_int - 1);
         total += nodes;
-        undo_move(&mut position, undo);
+        position.undo_move(undo);
         println!("{} {}", m.to_string(), nodes);
     }
 

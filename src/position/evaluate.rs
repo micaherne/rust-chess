@@ -1,8 +1,8 @@
-use crate::{position0x88::{movegen::PIECE_TYPES_COUNT, piece_colour, Position}};
+use crate::position::{movegen_simple::PIECE_TYPES_COUNT, piece_colour, Position};
 
 use super::{
     file,
-    movegen::{can_evade_check, side_to_move_in_check},
+    movegen_simple::{can_evade_check, side_to_move_in_check},
     piece_type, rank, square_iter, SquareIndex, BISHOP, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK,
     WHITE,
 };

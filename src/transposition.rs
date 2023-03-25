@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::SystemTime};
 use rand::RngCore;
 
 use crate::{
-    position0x88::{
-        evaluate::Score,
-        movegen::{Move, PIECE_TYPES_COUNT}, BLACK, WHITE, NONE,
+    position::{
+        evaluate::Score, movegen::Move, movegen_simple::PIECE_TYPES_COUNT, BLACK, NONE, WHITE,
     },
     search::Depth,
 };
@@ -19,7 +18,7 @@ pub struct TranspositionItem {
     pub node_type: NodeType,
     pub created: SystemTime,
     #[cfg(debug_assertions)]
-    pub fen: String
+    pub fen: String,
 }
 
 #[derive(Debug)]
@@ -94,7 +93,6 @@ pub struct ZobristNumbers {
 
 impl ZobristNumbers {
     pub fn init() -> ZobristNumbers {
-
         let mut rng = rand::thread_rng();
         let mut result = ZobristNumbers {
             piece_square: [[[0; 64]; PIECE_TYPES_COUNT]; 3],
@@ -107,7 +105,6 @@ impl ZobristNumbers {
                 for colour in [BLACK, WHITE, NONE] {
                     result.piece_square[colour as usize][piece][square] = rng.next_u64();
                 }
-                
             }
         }
         result.black_to_move = rng.next_u64();
@@ -120,7 +117,7 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
-    use crate::position0x88::{Position, notation::{make_move, undo_move}};
+    use crate::position::{make_moves::MakeMoves, Position};
 
     use super::*;
 
@@ -138,7 +135,7 @@ mod test {
             node_type: NodeType::PV,
             created: SystemTime::now(),
             #[cfg(debug_assertions)]
-            fen: "".to_owned()
+            fen: "".to_owned(),
         };
 
         tt1.store(item1);
@@ -162,13 +159,14 @@ mod test {
         let pos2: Position = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
-        let mut pos1: Position = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3".into();
+        let mut pos1: Position =
+            "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3".into();
         let pos2: Position = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3".into();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
         let pre1 = pos1.hash_key();
-        let undo = make_move(&mut pos1, 7, 23, None);
-        undo_move(&mut pos1, undo);
+        let undo = pos1.make_move(7, 23, None);
+        pos1.undo_move(undo);
         assert_eq!(pre1, pos1.hash_key());
     }
 }

@@ -3,12 +3,13 @@ use std::{
     sync::mpsc::{self, Receiver, Sender},
 };
 
-use chess_uci::messages::{InputMessage, OutputMessage};
+use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
 
 use crate::{
-    position0x88::{
-        notation::{make_moves, set_from_fen, set_startpos},
-        MoveUndo, Position,
+    position::{
+        make_moves::{MakeMoves, MoveUndo},
+        notation::{set_from_fen, set_startpos},
+        Position,
     },
     search::SearchTree,
 };
@@ -79,16 +80,14 @@ impl Engine {
                     set_from_fen(&mut self.position, &fen).unwrap()
                 }
                 InputMessage::MakeMoves(moves) => {
-                    let the_moves: Vec<crate::position0x88::notation::LongAlgebraicNotationMove> =
-                        moves
-                            .into_iter()
-                            .map(|x| {
-                                let v: crate::position0x88::notation::LongAlgebraicNotationMove =
-                                    x.into();
-                                v
-                            })
-                            .collect();
-                    self.undo_stack = make_moves(&mut self.position, &the_moves)
+                    let the_moves: Vec<LongAlgebraicNotationMove> = moves
+                        .into_iter()
+                        .map(|x| {
+                            let v: LongAlgebraicNotationMove = x.into();
+                            v
+                        })
+                        .collect();
+                    self.undo_stack = self.position.make_moves(&the_moves)
                 }
                 InputMessage::GetAvailableOptions => self
                     .sender

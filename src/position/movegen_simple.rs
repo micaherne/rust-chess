@@ -1,13 +1,20 @@
-use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
+
+use crate::position::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
 
 use super::{
     file,
-    notation::{piece_type_to_char, square_index_to_str, KING_HOME_SQUARES},
+    notation::{KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
-    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, iters::square_iterator,
+    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, iters::square_iterator, movegen::{GenerateMoves, Move},
 };
+
+
+impl GenerateMoves for Position {
+    fn generate_moves(&self) -> Vec<Move> {
+        generate_moves(&self)
+    }
+}
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
 
@@ -37,38 +44,6 @@ const PAWN_HOME_RANK: [u8; 2] = [1, 6];
 const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Move {
-    pub from_index: SquareIndex,
-    pub to_index: SquareIndex,
-    pub queening_piece: Option<Piece>,
-}
-
-impl ToString for Move {
-    fn to_string(&self) -> String {
-        let mut result = String::new();
-        result.push_str(square_index_to_str(self.from_index).as_str());
-        result.push_str(square_index_to_str(self.to_index).as_str());
-        match self.queening_piece {
-            Some(piece) => result.push(piece_type_to_char(piece).or(Some(' ')).unwrap()),
-            None => (),
-        }
-        result
-    }
-}
-
-impl From<&Move> for LongAlgebraicNotationMove {
-    fn from(value: &Move) -> Self {
-        let mut text = String::new();
-        text.push_str(&square_index_to_str(value.from_index));
-        text.push_str(&square_index_to_str(value.to_index));
-        if let Some(q) = value.queening_piece {
-            text.push(piece_type_to_char(q).unwrap_or(' '));
-        }
-        LongAlgebraicNotationMove { text }
-    }
-}
 
 pub fn generate_moves(position: &Position) -> Vec<Move> {
     let mut result: Vec<Move> = vec![];
@@ -1017,15 +992,13 @@ pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
     }
 }
 
-pub fn quiesce_captures(_position: &Position) -> impl Iterator<Item = Move> {
-    vec![].into_iter()
-}
-
 #[cfg(test)]
 mod test {
     use std::{env, fs};
 
-    use crate::{position0x88::{
+    use chess_uci::messages::LongAlgebraicNotationMove;
+
+    use crate::{position::{
         get_piece,
         notation::{set_from_fen, set_startpos},
         BLACK, KING, PAWN, WHITE,
@@ -1045,7 +1018,7 @@ mod test {
     fn test_generate_moves() {
         let mut pos = Position::default();
         set_startpos(&mut pos);
-        let m = generate_moves(&pos);
+        let m = pos.generate_moves();
         assert_eq!(20, m.len());
     }
 
@@ -1057,7 +1030,7 @@ mod test {
             "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ",
         )
         .expect("Failed");
-        let m = generate_moves(&position);
+        let m = position.generate_moves();
         for mov in &m {
             let m2: LongAlgebraicNotationMove = mov.into();
             print!("{:#?}", m2);
@@ -1092,7 +1065,7 @@ mod test {
             let mut full_fen = fen.to_owned().to_string();
             full_fen.push_str(" 0 1");
             set_from_fen(&mut pos, &full_fen).expect("Valid FEN");
-            let m = generate_moves(&pos);
+            let m = pos.generate_moves();
             if PERFT_COUNT_1[i] != m.len() {
                 for mv in &m {
                     println!("{}", mv.to_string());

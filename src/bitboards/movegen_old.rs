@@ -1,17 +1,18 @@
 use crate::{
     bitboards::{unwrap_bitboard, DIR_ALL_SLIDERS},
-    position0x88::{
+    position::{
         index0x88to64, index64to0x88,
         movegen::{is_sliding_piece, PIECE_TYPES_COUNT},
-        opposite_colour, piece_colour, piece_type, PieceType, Position, BISHOP, BLACK,
-        KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
+        opposite_colour, piece_colour, piece_type, PieceType, Position, BISHOP, BLACK, KING,
+        KNIGHT, PAWN, QUEEN, ROOK, WHITE,
     },
 };
 
 use super::{
     dir_index, highest_set_bit, is_diagonal, is_linear, is_slider, lowest_set_bit, rank,
     slides_in_dir, square_mask64, Bitboard, Direction, SixtyFourBitboards, SquareIndex64, BETWEEN,
-    DIRECTION_FROM_TO, KING_ATTACK_SQUARES, KNIGHT_ATTACK_SQUARES, PAWN_ATTACK_SQUARES, SLIDER_DIRECTION_SQUARE,
+    DIRECTION_FROM_TO, KING_ATTACK_SQUARES, KNIGHT_ATTACK_SQUARES, PAWN_ATTACK_SQUARES,
+    SLIDER_DIRECTION_SQUARE,
 };
 
 pub trait ColourType {

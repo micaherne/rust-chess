@@ -1,12 +1,18 @@
 use std::fmt::Debug;
 
-use crate::{transposition::{ZobristNumbers, ZobristNumber}, position0x88::movegen::is_valid_square, bitboards::{Bitboard, square_mask0x88, SquareIndex64, self}};
+use crate::{
+    bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
+    position::movegen_simple::is_valid_square,
+    transposition::{ZobristNumber, ZobristNumbers},
+};
 
-use self::{notation::piece_to_char, movegen::PIECE_TYPES_COUNT};
+use self::{movegen_simple::PIECE_TYPES_COUNT, notation::piece_to_char};
 
 pub mod evaluate;
-pub mod movegen;
 pub mod iters;
+pub mod make_moves;
+pub mod movegen;
+pub mod movegen_simple;
 pub mod notation;
 
 /// The type of a piece, without colour, e.g. knight, bishop etc.
@@ -51,8 +57,7 @@ pub struct Position {
     hash_key: ZobristNumber,
     // bitboards
     pub bb_pieces: [Bitboard; PIECE_TYPES_COUNT],
-    pub bb_colours: [Bitboard; 3]
-
+    pub bb_colours: [Bitboard; 3],
 }
 
 impl Position {
@@ -64,8 +69,10 @@ impl Position {
 
         let square_index = index0x88to64(square);
 
-        self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_colour][current_piece_type as usize][square_index as usize];
-        self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_colour][new_piece_type as usize][square_index as usize];
+        self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_colour]
+            [current_piece_type as usize][square_index as usize];
+        self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_colour]
+            [new_piece_type as usize][square_index as usize];
 
         self.squares[square] = piece;
         if new_piece_type == KING {
@@ -77,7 +84,6 @@ impl Position {
         self.bb_colours[current_piece_colour] ^= mask;
         self.bb_pieces[new_piece_type as usize] ^= mask;
         self.bb_colours[new_piece_colour] ^= mask;
-
     }
 
     pub fn remove_from_square(&mut self, square: SquareIndex) {
@@ -149,7 +155,6 @@ impl Position {
         debug_assert!(is_valid_square(square as i16));
         self.squares[square]
     }
-    
 }
 
 impl Debug for Position {
@@ -186,17 +191,6 @@ impl Default for Position {
             bb_colours: [0; 3],
         }
     }
-}
-
-#[derive(Clone, Copy)]
-pub struct MoveUndo {
-    from_index: SquareIndex,
-    to_index: SquareIndex,
-    moved_piece: Piece,
-    captured_piece: Piece,
-    ep_square: SquareIndex,
-    halfmove_clock: u32,
-    castling_rights: CastlingRights,
 }
 
 #[derive(Clone, Copy)]

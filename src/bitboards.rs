@@ -1,6 +1,7 @@
-pub mod movegen;
-
-use crate::position0x88::{index0x88to64, movegen::PIECE_TYPES_COUNT, SquareIndex, BLACK, WHITE, PieceType, BISHOP, QUEEN, ROOK};
+use crate::position::{
+    index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex, BISHOP, BLACK, QUEEN,
+    ROOK, WHITE,
+};
 
 pub type Bitboard = u64;
 pub type SquareIndex64 = u8;
@@ -27,7 +28,7 @@ pub const fn dir_index(dir: i8) -> usize {
         -7 => 5,
         9 => 6,
         -9 => 7,
-        _ => panic!("Invalid direction")
+        _ => panic!("Invalid direction"),
     }
 }
 
@@ -51,7 +52,7 @@ pub const fn slides_in_dir(piece_type: PieceType, dir: i8) -> bool {
         BISHOP => dir_index > 3,
         ROOK => dir_index < 4,
         QUEEN => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -113,36 +114,6 @@ pub fn lowest_set_bit(bitboard: Bitboard) -> SquareIndex64 {
 
     bitboard.trailing_zeros() as SquareIndex64
 }
-
-/// Take each bit of a bitboard and return a vector of indices for them.
-macro_rules! unwrap_bitboard {
-    ($bb:ident) => {{
-        let mut x = $bb as Bitboard;
-        let mut result: Vec<SquareIndex64> = vec![];
-        while x != 0 {
-            result.push(x.trailing_zeros() as SquareIndex64);
-            x &= x - 1;
-        }
-        result
-    }};
-
-    ($bb:ident:reverse) => {{
-        let mut b = $bb as Bitboard;
-        let mut result: Vec<SquareIndex64> = vec![];
-        while b != 0 {
-            let x = 63 - b.leading_zeros();
-            result.push(x as SquareIndex64);
-            b &= (1 << x) - 1;
-        }
-        result
-    }};
-
-    ($bb:expr) => {{
-        let b = $bb as Bitboard;
-        unwrap_bitboard!(b)
-    }};
-}
-pub(crate) use unwrap_bitboard;
 
 const fn init_rank_masks() -> EightBitboards {
     let mut result = [0; 8];
@@ -427,19 +398,6 @@ mod test {
         assert_eq!(0x102040810, ANTIDIAGONAL_MASK[4]);
         assert_eq!(0x1400000000, PAWN_ATTACK_SQUARES[WHITE as usize][27]);
         assert_eq!(0x2, PAWN_ATTACK_SQUARES[BLACK as usize][8]);
-    }
-
-    #[test]
-    fn test_unwrap_bitboard() {
-        assert_eq!(
-            vec![19, 44, 49],
-            unwrap_bitboard!(0x2100000080000 as Bitboard)
-        );
-        let x1 = 0x2100000080000 as Bitboard;
-        assert_eq!(
-            vec![49, 44, 19],
-            unwrap_bitboard!(x1:reverse)
-        );
     }
 
     #[test]

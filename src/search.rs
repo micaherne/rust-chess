@@ -9,21 +9,18 @@ use chess_uci::messages::{
 };
 
 use crate::{
-    bitboards::movegen::{Black, White},
-    position0x88::{
+    position::{
         evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
-        index64to0x88,
-        movegen::{
-            create_pawn_moves, generate_moves, quiesce_captures, side_to_move_in_check, Move,
-        },
-        notation::{make_move, undo_move},
+        make_moves::MakeMoves,
+        movegen::{GenerateMoves, Move},
+        movegen_simple::side_to_move_in_check,
         Position, WHITE,
     },
     transposition::{NodeType, TranspositionItem, TranspositionTable},
 };
 
 #[cfg(debug_assertions)]
-use crate::position0x88::notation::to_fen;
+use crate::position::notation::to_fen;
 
 pub type Depth = i16;
 
@@ -38,7 +35,6 @@ pub struct SearchTree {
     transposition_table: TranspositionTable,
     pv: Line,
     nodes_searched: usize,
-    quiescence_nodes: usize,
     time_allowed: usize, // in milliseconds - zero is infinity
     timeout: bool,       // have we run out of time and need to return immediately?
     search_start: SystemTime,
@@ -60,7 +56,6 @@ impl SearchTree {
             transposition_table: TranspositionTable::new(TRANSPOSITION_TABLE_SIZE),
             pv: vec![],
             nodes_searched: 0,
-            quiescence_nodes: 0,
             time_allowed,
             timeout: false,
             search_start: SystemTime::now(),
@@ -257,7 +252,7 @@ impl SearchTree {
             return eval;
         }
 
-        let moves = generate_moves(&self.position);
+        let moves = &self.position.generate_moves();
 
         // Test for checkmate / stalemate.
         if moves.len() == 0 {
@@ -270,15 +265,12 @@ impl SearchTree {
         }
 
         for mv in moves {
-            let undo = make_move(
-                &mut self.position,
-                mv.from_index,
-                mv.to_index,
-                mv.queening_piece,
-            );
+            let undo = self
+                .position
+                .make_move(mv.from_index, mv.to_index, mv.queening_piece);
             let move_score = -self.search_ab(-beta, -alpha_local, depthleft - 1, &mut line);
 
-            undo_move(&mut self.position, undo);
+            self.position.undo_move(undo);
 
             if move_score >= beta {
                 let tt_item = TranspositionItem {
@@ -303,7 +295,7 @@ impl SearchTree {
 
                 // If alpha is raised, update the PV.
                 pline.clear();
-                pline.push(mv);
+                pline.push(*mv);
                 pline.extend(&line);
 
                 let pv_algebraic: Vec<LongAlgebraicNotationMove> =
@@ -354,14 +346,6 @@ impl SearchTree {
                         info_messages.push(InfoMessage::Depth(self.search_depth as usize));
                     }
 
-                    #[cfg(debug_assertions)]
-                    self.sender
-                        .send(OutputMessage::Info(vec![InfoMessage::String(format!(
-                            "quiescence nodes {}",
-                            self.quiescence_nodes
-                        ))]))
-                        .unwrap();
-
                     // Send it to the output.
                     self.sender
                         .send(OutputMessage::Info(info_messages))
@@ -381,66 +365,6 @@ impl SearchTree {
             fen: to_fen(&self.position),
         };
         self.transposition_table.store(tt_item);
-
-        alpha_local
-    }
-
-    pub fn quiesce(&mut self, alpha: Score, beta: Score) -> Score {
-        self.quiescence_nodes += 1;
-
-        let mut alpha_local = alpha;
-        let stand_pat = evaluate(&self.position);
-        if stand_pat > beta {
-            return beta;
-        }
-        if alpha_local < stand_pat {
-            alpha_local = stand_pat;
-        }
-
-        let mut q_moves = vec![];
-        let moves = if self.position.side_to_move == WHITE {
-            self.position.quiescence_moves::<White>()
-        } else {
-            self.position.quiescence_moves::<Black>()
-        };
-
-        for qm in moves {
-            if qm.is_queening {
-                create_pawn_moves(
-                    index64to0x88(qm.from),
-                    index64to0x88(qm.to),
-                    qm.is_queening,
-                    &mut q_moves,
-                );
-            } else {
-                q_moves.push(Move {
-                    from_index: index64to0x88(qm.from),
-                    to_index: index64to0x88(qm.to),
-                    queening_piece: None,
-                });
-            }
-        }
-
-        for capture in quiesce_captures(&mut self.position) {
-            let undo = make_move(
-                &mut self.position,
-                capture.from_index,
-                capture.to_index,
-                capture.queening_piece,
-            );
-
-            let score = -self.quiesce(-beta, -alpha);
-
-            undo_move(&mut self.position, undo);
-
-            if score >= beta {
-                return beta;
-            }
-
-            if score > alpha_local {
-                alpha_local = score;
-            }
-        }
 
         alpha_local
     }

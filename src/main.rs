@@ -3,7 +3,7 @@ pub mod engine;
 pub mod fen;
 pub mod messages;
 pub mod perft;
-pub mod position0x88;
+pub mod position;
 pub mod search;
 pub mod transposition;
 

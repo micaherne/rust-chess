@@ -1,6 +1,7 @@
-
-
-use super::{SquareIndex, Position, movegen::SquareAndPiece, EMPTY, Colour, piece_colour, WHITE, BLACK, Piece, PieceType, PAWN, BISHOP, KNIGHT, ROOK, QUEEN, KING, piece_type};
+use super::{
+    movegen_simple::SquareAndPiece, piece_colour, piece_type, Colour, Piece, PieceType, Position,
+    SquareIndex, BISHOP, BLACK, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
+};
 
 #[derive(Default, Debug)]
 pub struct SquareIterator {
@@ -29,7 +30,9 @@ pub fn square_iterator() -> impl Iterator<Item = SquareIndex> {
 }
 
 pub fn piece_iterator<'a>(position: &'a Position) -> impl 'a + Iterator<Item = SquareAndPiece> {
-    square_iterator().map(|sq| (sq, position.square_piece(sq))).filter(|x| x.1 != EMPTY)
+    square_iterator()
+        .map(|sq| (sq, position.square_piece(sq)))
+        .filter(|x| x.1 != EMPTY)
 }
 
 trait CheckColour {
@@ -93,7 +96,10 @@ impl CheckPieceType for SquareAndPiece {
 
 #[cfg(test)]
 mod test {
-    use crate::{fen::STARTPOS_FEN, position0x88::{get_piece, ROOK, WHITE, BLACK}};
+    use crate::{
+        fen::STARTPOS_FEN,
+        position::{get_piece, BLACK, ROOK, WHITE},
+    };
 
     use super::*;
 
@@ -118,7 +124,9 @@ mod test {
 
         let p2: Vec<SquareAndPiece> = piece_iterator(&position).filter(|p| p.is_white()).collect();
         assert_eq!(16, p2.len());
-        let p3: Vec<SquareAndPiece> = piece_iterator(&position).filter(|p| p.is_knight()).collect();
+        let p3: Vec<SquareAndPiece> = piece_iterator(&position)
+            .filter(|p| p.is_knight())
+            .collect();
         assert_eq!(4, p3.len());
     }
 }
