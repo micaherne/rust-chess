@@ -6,7 +6,7 @@ use super::{
     file,
     notation::{KING_HOME_SQUARES},
     opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position0x88, SquareIndex, BISHOP,
-    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, iters::square_iterator, movegen::{GenerateMoves, Move},
+    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, movegen::{GenerateMoves, Move}, index64to0x88,
 };
 
 
@@ -51,22 +51,26 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
 
     let is_check = side_to_move_in_check(position);
 
+    let mut our_pieces = position.bb_colours[side_to_move as usize];
+
     // Check evasions are filtered out at the end.
 
-    for piece_square in square_iterator() {
+    while our_pieces != 0 {
+
+        let piece_square = index64to0x88(our_pieces.trailing_zeros() as u8);
+        our_pieces &= our_pieces - 1;
         
         let piece = position.square_piece(piece_square);
 
-        if piece == EMPTY {
-            continue;
-        }
+        debug_assert!(piece != EMPTY);
+
         let current_piece_colour = piece_colour(piece).unwrap();
 
-        if current_piece_colour != side_to_move {
-            continue;
-        }
+        debug_assert!(current_piece_colour == side_to_move);
 
         let piece_type = piece_type(piece);
+
+        debug_assert!(piece_type != EMPTY);
 
         let opt_pinned_direction = pinned_against_king_direction(position, piece_square);
 

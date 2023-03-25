@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     io::{BufRead, BufReader, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    time::Instant,
     u8,
 };
 
@@ -311,6 +312,8 @@ pub fn run_divide(args: VecDeque<String>) {
         return;
     }
 
+    let start_time = Instant::now();
+
     let moves = position.generate_moves();
 
     let mut total = 0;
@@ -323,5 +326,9 @@ pub fn run_divide(args: VecDeque<String>) {
         println!("{} {}", m.to_string(), nodes);
     }
 
-    println!("Total nodes: {}", total);
+    println!(
+        "Total nodes: {} in {} seconds.",
+        total,
+        start_time.elapsed().as_secs()
+    );
 }

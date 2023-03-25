@@ -1,4 +1,7 @@
-use crate::position0x88::{movegen_simple::PIECE_TYPES_COUNT, piece_colour, Position0x88};
+use crate::{
+    position::Evaluate,
+    position0x88::{movegen_simple::PIECE_TYPES_COUNT, piece_colour, Position0x88},
+};
 
 use super::{
     file,
@@ -10,6 +13,12 @@ use super::{
 pub type Score = i32;
 
 pub type PieceSquareTable = [Score; 64];
+
+impl Evaluate<Score> for Position0x88 {
+    fn evaluate(&self) -> Score {
+        evaluate(&self)
+    }
+}
 
 pub const CHECKMATE_SCORE_MAX: Score = 20000;
 

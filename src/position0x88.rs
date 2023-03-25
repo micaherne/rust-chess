@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{
     bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
-    position::SetPosition,
+    position::{BoardSide, CastlingRights, MoveUndo, Position, SetPosition},
     position0x88::movegen_simple::is_valid_square,
     transposition::{ZobristNumber, ZobristNumbers},
 };
@@ -24,6 +24,8 @@ pub type Colour = u8;
 
 /// A piece with colour, e.g. a black knight.
 pub type Piece = u8;
+
+pub type MoveUndo0x88 = MoveUndo<SquareIndex, PieceType>;
 
 // Colours.
 pub const WHITE: Colour = 0;
@@ -60,6 +62,8 @@ pub struct Position0x88 {
     pub bb_pieces: [Bitboard; PIECE_TYPES_COUNT],
     pub bb_colours: [Bitboard; 3],
 }
+
+impl Position for Position0x88 {}
 
 impl SetPosition<SquareIndex, Piece> for Position0x88 {
     fn set_square_to_piece(&mut self, square: SquareIndex, piece: Piece) {
@@ -196,48 +200,6 @@ impl Default for Position0x88 {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum BoardSide {
-    Queenside,
-    Kingside,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CastlingRights {
-    pub flags: u8, // KQkq
-}
-
-impl CastlingRights {
-    pub fn new() -> CastlingRights {
-        CastlingRights { flags: 0 }
-    }
-
-    pub fn allow(&mut self, colour: Colour, side: Option<BoardSide>) {
-        let mask = Self::mask(colour, side);
-        self.flags |= mask;
-    }
-
-    pub fn remove(&mut self, colour: Colour, side: Option<BoardSide>) {
-        let mask = Self::mask(colour, side);
-        self.flags = self.flags & !(mask);
-    }
-
-    pub fn allowed(&self, colour: Colour, side: BoardSide) -> bool {
-        let mask = Self::mask(colour, Some(side));
-        self.flags & mask != 0
-    }
-
-    #[inline]
-    fn mask(colour: Colour, side: Option<BoardSide>) -> u8 {
-        let colour_shift = 2 * (1 - colour);
-        let mask = match side {
-            None => 0b11,
-            Some(castling_side) => 1 << castling_side as u32,
-        };
-        mask << colour_shift
-    }
-}
-
 #[inline]
 pub const fn file(square: SquareIndex) -> RankOrFileIndex {
     square as u8 & 7
@@ -370,29 +332,6 @@ mod test {
     fn test_opposite_colour() {
         assert_eq!(WHITE, opposite_colour(BLACK));
         assert_eq!(BLACK, opposite_colour(WHITE));
-    }
-
-    #[test]
-    fn test_castling_rights() {
-        let mut castling = CastlingRights::new();
-        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
-        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
-        castling.allow(WHITE, None);
-        assert!(castling.allowed(WHITE, BoardSide::Kingside));
-        assert!(castling.allowed(WHITE, BoardSide::Queenside));
-        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
-        castling.remove(WHITE, Some(BoardSide::Kingside));
-        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
-        assert!(castling.allowed(WHITE, BoardSide::Queenside));
-        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
-        castling.allow(BLACK, Some(BoardSide::Kingside));
-        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
-        assert!(castling.allowed(WHITE, BoardSide::Queenside));
-        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
-        assert!(castling.allowed(BLACK, BoardSide::Kingside));
-
-        let castling2 = CastlingRights { flags: 0b1011 };
-        assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
     }
 
     #[test]

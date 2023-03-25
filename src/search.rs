@@ -9,8 +9,9 @@ use chess_uci::messages::{
 };
 
 use crate::{
+    position::Evaluate,
     position0x88::{
-        evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
+        evaluate::{Score, CHECKMATE_SCORE_MAX},
         make_moves::MakeMoves,
         movegen::{GenerateMoves, Move},
         movegen_simple::side_to_move_in_check,
@@ -237,7 +238,7 @@ impl SearchTree {
         }
 
         if depthleft == 0 {
-            let eval = evaluate(&self.position); // self.quiesce(alpha_local, beta);
+            let eval = self.position.evaluate(); // self.quiesce(alpha_local, beta);
             let tt_item = TranspositionItem {
                 key: self.position.hash_key(),
                 best_move: None,

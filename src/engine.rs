@@ -7,9 +7,9 @@ use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage
 
 use crate::{
     position0x88::{
-        make_moves::{MakeMoves, MoveUndo},
+        make_moves::MakeMoves,
         notation::{set_from_fen, set_startpos},
-        Position0x88,
+        MoveUndo0x88, Position0x88,
     },
     search::SearchTree,
 };
@@ -20,7 +20,7 @@ pub struct Engine {
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
-    undo_stack: Vec<MoveUndo>, // the moves made to get to the position to be searched
+    undo_stack: Vec<MoveUndo0x88>, // the moves made to get to the position to be searched
 }
 
 struct EngineOptions {

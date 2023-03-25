@@ -1,18 +1,18 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
-    position::SetPosition,
+    position::{BoardSide, MoveUndo, SetPosition},
     position0x88::{
         file, get_piece,
         notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
-        opposite_colour, piece_colour, piece_type, rank, square_index, BoardSide, BLACK, EMPTY,
-        KING, PAWN, ROOK, WHITE,
+        opposite_colour, piece_colour, piece_type, rank, square_index, BLACK, EMPTY, KING, PAWN,
+        ROOK, WHITE,
     },
 };
 
 use super::{
     notation::{char_to_piece_type, str_to_square_index},
-    CastlingRights, Piece, PieceType, Position0x88, SquareIndex,
+    MoveUndo0x88, PieceType, Position0x88, SquareIndex,
 };
 
 pub trait ExtractMove {
@@ -40,26 +40,20 @@ impl ExtractMove for LongAlgebraicNotationMove {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct MoveUndo {
-    from_index: SquareIndex,
-    to_index: SquareIndex,
-    moved_piece: Piece,
-    captured_piece: Piece,
-    ep_square: SquareIndex,
-    halfmove_clock: u32,
-    castling_rights: CastlingRights,
-}
-
 pub trait MakeMoves<S, P> {
-    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo>;
-    fn make_move(&mut self, from_index: S, to_index: S, queening_piece: Option<P>) -> MoveUndo;
-    fn undo_move(&mut self, undo: MoveUndo);
+    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo<S, P>>;
+    fn make_move(
+        &mut self,
+        from_index: S,
+        to_index: S,
+        queening_piece: Option<P>,
+    ) -> MoveUndo<S, P>;
+    fn undo_move(&mut self, undo: MoveUndo<S, P>);
 }
 
 impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
-    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo> {
-        let mut result: Vec<MoveUndo> = vec![];
+    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo0x88> {
+        let mut result: Vec<MoveUndo0x88> = vec![];
         for mv in moves {
             let from = mv.from_square();
             let to = mv.to_square();
@@ -74,7 +68,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
         from_index: SquareIndex,
         to_index: SquareIndex,
         queening_piece: Option<PieceType>,
-    ) -> MoveUndo {
+    ) -> MoveUndo0x88 {
         let moved_piece = self.squares[from_index];
         debug_assert!(moved_piece != EMPTY);
 
@@ -224,7 +218,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
         undo
     }
 
-    fn undo_move(&mut self, undo: MoveUndo) {
+    fn undo_move(&mut self, undo: MoveUndo0x88) {
         // En passent.
         let is_enpassent =
             undo.to_index == undo.ep_square && piece_type(self.squares[undo.to_index]) == PAWN;
