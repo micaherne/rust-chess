@@ -4,6 +4,7 @@ pub mod fen;
 pub mod messages;
 pub mod perft;
 pub mod position;
+pub mod position0x88;
 pub mod search;
 pub mod transposition;
 

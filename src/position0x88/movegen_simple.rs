@@ -1,16 +1,16 @@
 
 
-use crate::position::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY};
+use crate::{position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMPTY}, position::SetPosition};
 
 use super::{
     file,
     notation::{KING_HOME_SQUARES},
-    opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position, SquareIndex, BISHOP,
+    opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position0x88, SquareIndex, BISHOP,
     BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, iters::square_iterator, movegen::{GenerateMoves, Move},
 };
 
 
-impl GenerateMoves for Position {
+impl GenerateMoves for Position0x88 {
     fn generate_moves(&self) -> Vec<Move> {
         generate_moves(&self)
     }
@@ -45,7 +45,7 @@ const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
-pub fn generate_moves(position: &Position) -> Vec<Move> {
+pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
     let mut result: Vec<Move> = vec![];
     let side_to_move = position.side_to_move;
 
@@ -221,7 +221,7 @@ pub fn generate_moves(position: &Position) -> Vec<Move> {
 
 /// Test for the capture pawn being pinned against the king in an en passent capture.
 /// This does not check if the position is en passent so should only be called when we already know it is.
-fn is_en_passent_pin(position: &Position, capturing_pawn_square: SquareIndex) -> bool {
+fn is_en_passent_pin(position: &Position0x88, capturing_pawn_square: SquareIndex) -> bool {
 
     let captured_square = match capturing_pawn_square < position.ep_square {
         true => position.ep_square - 16,
@@ -292,7 +292,7 @@ fn is_en_passent_pin(position: &Position, capturing_pawn_square: SquareIndex) ->
     false
 }
 
-fn add_castling_if_allowed(position: &Position, colour: Colour, board_side: BoardSide, moves: &mut Vec<Move>) {
+fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: BoardSide, moves: &mut Vec<Move>) {
     
     // This also implicitly asserts that the rook is there.
     if !position.castling_rights.allowed(colour, board_side) {
@@ -345,7 +345,7 @@ fn add_castling_if_allowed(position: &Position, colour: Colour, board_side: Boar
 
 }
 
-fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move> {
+fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<Move> {
     let mut result = vec![];
     let king_square = position.king_squares[position.side_to_move as usize];
 
@@ -423,7 +423,7 @@ fn filter_non_check_evasions(position: &Position, moves: Vec<Move>) -> Vec<Move>
 
 /// Find pieces attacking the piece on the given square.
 fn attackers_of_square(
-    position: &Position,
+    position: &Position0x88,
     piece_square: SquareIndex,
 ) -> Vec<SquareAndPiece> {
     let mut result = vec![];
@@ -490,7 +490,7 @@ fn attackers_of_square(
     result
 }
 
-pub fn allowed_directions(position: &Position, piece_square: SquareIndex) -> PieceDirections {
+pub fn allowed_directions(position: &Position0x88, piece_square: SquareIndex) -> PieceDirections {
     let opt_pinned_direction = pinned_against_king_direction(position, piece_square);
     let piece_type = piece_type(position.squares[piece_square]);
 
@@ -513,7 +513,7 @@ pub fn allowed_directions(position: &Position, piece_square: SquareIndex) -> Pie
 }
 
 pub fn is_square_attacked(
-    position: &Position,
+    position: &Position0x88,
     square: SquareIndex,
     moving_colour: Colour,
     ignore_square: Option<SquareIndex>,
@@ -532,7 +532,7 @@ pub fn is_square_attacked(
 }
 
 pub fn is_square_attacked_by_non_slider(
-    position: &Position,
+    position: &Position0x88,
     square: SquareIndex,
     moving_colour: Colour,
     test_piece_type: PieceType,
@@ -569,7 +569,7 @@ pub fn is_square_attacked_by_non_slider(
 }
 
 pub fn is_square_attacked_by_slider(
-    position: &Position,
+    position: &Position0x88,
     square: SquareIndex,
     moving_colour: Colour,
     ignore_square: Option<SquareIndex>,
@@ -599,7 +599,7 @@ pub fn is_square_attacked_by_slider(
 /// Check that the king is not moving into check.
 /// Note that this doesn't check it's an actual legal move.
 /// TODO: Rename this function.
-pub fn is_legal_king_move(position: &Position, move_to_test: &Move, moving_colour: Colour) -> bool {
+pub fn is_legal_king_move(position: &Position0x88, move_to_test: &Move, moving_colour: Colour) -> bool {
     !is_square_attacked(
         position,
         move_to_test.to_index,
@@ -609,7 +609,7 @@ pub fn is_legal_king_move(position: &Position, move_to_test: &Move, moving_colou
 }
 
 pub fn create_sliding_moves(
-    position: &Position,
+    position: &Position0x88,
     piece_square: SquareIndex,
     allow_captures: bool,
     result: &mut Vec<Move>,
@@ -671,7 +671,7 @@ pub fn create_sliding_moves(
 }
 
 pub fn create_non_sliding_moves(
-    position: &Position,
+    position: &Position0x88,
     piece_square: SquareIndex,
     piece_type: PieceType,
     result: &mut Vec<Move>,
@@ -729,7 +729,7 @@ pub fn create_pawn_moves(
     }
 }
 
-pub fn side_to_move_in_check(position: &Position) -> bool {
+pub fn side_to_move_in_check(position: &Position0x88) -> bool {
     is_square_attacked(
         position,
         position.king_squares[position.side_to_move as usize],
@@ -739,7 +739,7 @@ pub fn side_to_move_in_check(position: &Position) -> bool {
 }
 
 /// Can check be evaded? Along with side_to_move_in_check() this determines checkmate.
-pub fn can_evade_check(position: &Position) -> bool {
+pub fn can_evade_check(position: &Position0x88) -> bool {
     debug_assert!(side_to_move_in_check(position));
 
     let king_square = position.king_squares[position.side_to_move as usize];
@@ -894,7 +894,7 @@ pub fn is_sliding_piece(piece_type: PieceType) -> bool {
 
 /// Check if the piece is pinned against the king, and return the direction of the pin if it is.
 pub fn pinned_against_king_direction(
-    position: &Position,
+    position: &Position0x88,
     piece_square: SquareIndex,
 ) -> Option<Direction> {
     if position.squares[piece_square] == EMPTY {
@@ -947,7 +947,7 @@ pub const fn is_valid_square(square: i16) -> bool {
 }
 
 pub fn next_piece_in_direction(
-    position: &Position,
+    position: &Position0x88,
     from: SquareIndex,
     direction: Direction,
     ignore_square: Option<SquareIndex>,
@@ -998,11 +998,11 @@ mod test {
 
     use chess_uci::messages::LongAlgebraicNotationMove;
 
-    use crate::{position::{
+    use crate::{position0x88::{
         get_piece,
         notation::{set_from_fen, set_startpos},
         BLACK, KING, PAWN, WHITE,
-    }, perft::{perft, divide}};
+    }, perft::{perft, divide}, position::SetPosition};
 
     use super::*;
 
@@ -1016,7 +1016,7 @@ mod test {
 
     #[test]
     fn test_generate_moves() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         set_startpos(&mut pos);
         let m = pos.generate_moves();
         assert_eq!(20, m.len());
@@ -1024,7 +1024,7 @@ mod test {
 
     #[test]
     fn test_generate_moves_check() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_from_fen(
             &mut position,
             "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ",
@@ -1040,7 +1040,7 @@ mod test {
 
     #[test]
     fn test_create_non_sliding_moves() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_from_fen(
             &mut position,
             "rnb1kbnr/ppq1pppp/2pp4/8/6P1/2P5/PP1PPPBP/RNBQK1NR w KQkq -",
@@ -1061,7 +1061,7 @@ mod test {
     #[test]
     fn test_generate_moves_perft() {
         for (i, fen) in PERFT_POSITIONS.iter().enumerate() {
-            let mut pos = Position::default();
+            let mut pos = Position0x88::default();
             let mut full_fen = fen.to_owned().to_string();
             full_fen.push_str(" 0 1");
             set_from_fen(&mut pos, &full_fen).expect("Valid FEN");
@@ -1086,7 +1086,7 @@ mod test {
 
     #[test]
     fn test_pinned_against_king_direction() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         pos.set_square_to_piece(0x44, PAWN);
         pos.set_square_to_piece(0x42, get_piece(ROOK, BLACK));
         pos.set_square_to_piece(0x46, KING);
@@ -1097,7 +1097,7 @@ mod test {
 
     #[test]
     fn test_side_to_move_in_check() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         set_from_fen(
             &mut pos,
             "rnbk1bnr/6pp/4Pp2/1N6/4PB2/P4N2/P3BPPP/R2R2K1 b - - 1 15 ",
@@ -1108,41 +1108,41 @@ mod test {
 
     #[test]
     fn test_can_evade_check() {
-        let pos: Position = "5k2/8/8/8/7b/1N6/5q2/5K2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/8/7b/1N6/5q2/5K2 w - - 0 1".into();
         assert!(!can_evade_check(&pos));
-        let pos: Position = "5k2/8/8/8/5q1b/1N6/8/5K2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/8/5q1b/1N6/8/5K2 w - - 0 1".into();
         assert!(can_evade_check(&pos));
-        let pos: Position = "5k2/8/8/6r1/7b/1N6/4q3/5K2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/6r1/7b/1N6/4q3/5K2 w - - 0 1".into();
         assert!(can_evade_check(&pos));
 
         // Can take the checking piece.
-        let pos: Position = "5k2/8/8/8/7b/3N4/5q2/5K2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/8/7b/3N4/5q2/5K2 w - - 0 1".into();
         assert!(can_evade_check(&pos));
 
         // Double check.
-        let pos: Position = "5k2/8/8/1bN2qr1/8/8/8/r2Q1K2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/1bN2qr1/8/8/8/r2Q1K2 w - - 0 1".into();
         assert!(can_evade_check(&pos));
-        let pos: Position = "5k2/8/8/1bN2qr1/8/8/8/r3QK2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/1bN2qr1/8/8/8/r3QK2 w - - 0 1".into();
         assert!(!can_evade_check(&pos));
-        let pos: Position = "5k2/8/8/1b3qr1/8/8/8/r3QK2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/1b3qr1/8/8/8/r3QK2 w - - 0 1".into();
         assert!(!can_evade_check(&pos));
 
         // Interjection.
-        let pos: Position = "5k2/8/8/5qr1/8/8/4P3/r2NQK2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/5qr1/8/8/4P3/r2NQK2 w - - 0 1".into();
         assert!(can_evade_check(&pos));
-        let pos: Position = "5k2/8/8/5qr1/8/8/4P3/r3QK2 w - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/8/5qr1/8/8/4P3/r3QK2 w - - 0 1".into();
         assert!(!can_evade_check(&pos));
-        let pos: Position = "5k2/8/7Q/5qr1/8/8/4P3/3N1K2 b - - 0 1".into();
+        let pos: Position0x88 = "5k2/8/7Q/5qr1/8/8/4P3/3N1K2 b - - 0 1".into();
         assert!(can_evade_check(&pos));
 
         // Pawn interjection 
-        let pos: Position = "4qk2/8/8/P1P5/KB6/RN6/8/8 w - - 0 1".into();
+        let pos: Position0x88 = "4qk2/8/8/P1P5/KB6/RN6/8/8 w - - 0 1".into();
         assert!(can_evade_check(&pos));
-        let pos: Position = "8/4rbr1/4pkp1/5pp1/8/8/1B6/1K6 b - - 0 1".into();
+        let pos: Position0x88 = "8/4rbr1/4pkp1/5pp1/8/8/1B6/1K6 b - - 0 1".into();
         assert!(can_evade_check(&pos));
 
         // Interjection of e.p. capture.
-        let pos: Position = "4qk2/8/8/P1pP4/KB6/RN6/8/8 w - c6 0 1".into();
+        let pos: Position0x88 = "4qk2/8/8/P1pP4/KB6/RN6/8/8 w - c6 0 1".into();
         assert!(can_evade_check(&pos));
         
         
@@ -1150,12 +1150,12 @@ mod test {
 
     #[test]
     fn test_ep_pin() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         let fen = "8/5K2/8/3pP3/8/8/b4k2/8 w - d6 0 1";
         set_from_fen(&mut pos, fen).unwrap();
         assert!(is_en_passent_pin(&pos, 0x44));
 
-        let mut pos2 = Position::default();
+        let mut pos2 = Position0x88::default();
         let fen2 = "3K4/8/8/3pP3/8/8/5k2/3r4 b - d6 0 1";
         set_from_fen(&mut pos2, fen2).unwrap();
         assert!(!is_en_passent_pin(&pos2, 0x44));
@@ -1163,21 +1163,21 @@ mod test {
 
     #[test]
     fn test_ep_horizontal_pin() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         set_from_fen(&mut pos, "1k6/8/8/r2pP1K1/8/8/8/8 w - d6 0 1 ").unwrap();
         assert!(is_en_passent_pin(&pos, 0x44));
     }
 
     #[test]
     fn test_ep_vertical_pin() {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         set_from_fen(&mut pos, "rB5r/pp4k1/5n2/q3p2p/Pb3pP1/1P1P3p/R2QPP2/1N2KBR1 b - g3 0 2").unwrap();
         assert!(!is_en_passent_pin(&pos, 0x35));
     }
 
     #[test]
     fn test_move_gen_temp() {
-        let mut position: Position = Position::default();
+        let mut position: Position0x88 = Position0x88::default();
         // let fen = "r3kbnr/8/1p1B1q2/p2b1p1P/PpPp4/4Q2N/3PPP1P/RN2KB1R b KQkq - 0 1".to_string();
         // let fen = "rb6/5b2/1p2r3/p1k1P3/PpPPp3/2R4P/8/1N1K2R1 b - d3 0 1".to_string();
         // let fen = "r3kbnr/2qn2p1/8/pppBpp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR w KQkq - 0 1".to_string();
@@ -1207,7 +1207,7 @@ mod test {
             let fen = line_parts[0];
 
             // println!("Creating from FEN: {}", fen);
-            let mut position = Position::default();
+            let mut position = Position0x88::default();
             set_from_fen(&mut position, fen).unwrap();
 
             println!("{}: {}", line_no, fen);

@@ -9,18 +9,18 @@ use chess_uci::messages::{
 };
 
 use crate::{
-    position::{
+    position0x88::{
         evaluate::{evaluate, Score, CHECKMATE_SCORE_MAX},
         make_moves::MakeMoves,
         movegen::{GenerateMoves, Move},
         movegen_simple::side_to_move_in_check,
-        Position, WHITE,
+        Position0x88, WHITE,
     },
     transposition::{NodeType, TranspositionItem, TranspositionTable},
 };
 
 #[cfg(debug_assertions)]
-use crate::position::notation::to_fen;
+use crate::position0x88::notation::to_fen;
 
 pub type Depth = i16;
 
@@ -30,7 +30,7 @@ const TRANSPOSITION_TABLE_SIZE: usize = 1_000_000;
 
 #[derive(Debug)]
 pub struct SearchTree {
-    position: Position,
+    position: Position0x88,
     search_depth: Depth,
     transposition_table: TranspositionTable,
     pv: Line,
@@ -44,7 +44,7 @@ pub struct SearchTree {
 
 impl SearchTree {
     pub fn new(
-        position: Position,
+        position: Position0x88,
         depth: Depth,
         time_allowed: usize,
         sender: Sender<OutputMessage>,
@@ -66,7 +66,7 @@ impl SearchTree {
 
     /// Create the search tree and start the thread to search it.
     pub fn start_search_thread(
-        position: Position,
+        position: Position0x88,
         commands: &[GoSubcommand],
         output_sender: Sender<OutputMessage>,
         input_receiver: Receiver<InputMessage>,
@@ -94,7 +94,7 @@ impl SearchTree {
         });
     }
 
-    pub fn calculate_time_allowed(position: &Position, commands: &[GoSubcommand]) -> usize {
+    pub fn calculate_time_allowed(position: &Position0x88, commands: &[GoSubcommand]) -> usize {
         let mut moves_to_go = 0;
         let mut time_left = 0;
         let mut increment = 0;
@@ -378,14 +378,14 @@ mod test {
 
     #[test]
     fn test_mate_in_one() {
-        let pos: Position = "4k3/8/8/1N5b/2q5/8/8/4K3 b - - 0 1".into();
+        let pos: Position0x88 = "4k3/8/8/1N5b/2q5/8/8/4K3 b - - 0 1".into();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         let tree = &mut SearchTree::new(pos, 1, 0, tx2, rx1);
         let mv = tree.search();
         assert_eq!("c4e2", mv.text);
 
-        let pos: Position = "8/7p/8/2p3P1/3k3P/8/p6r/3K4 b - - 0 52".into();
+        let pos: Position0x88 = "8/7p/8/2p3P1/3k3P/8/p6r/3K4 b - - 0 52".into();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         // Search to depth 5 to ensure it's not going for longer mates.
@@ -396,7 +396,7 @@ mod test {
 
     #[test]
     fn test_mate_in_two() {
-        let pos: Position =
+        let pos: Position0x88 =
             "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0".into();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
@@ -414,7 +414,7 @@ mod test {
 
     #[test]
     fn test_stupid_move() {
-        let pos: Position = "r2r1k2/ppp3pp/2p1p3/6P1/1b3B2/2N2P2/PP5P/2KRR3 b - - 0 20".into();
+        let pos: Position0x88 = "r2r1k2/ppp3pp/2p1p3/6P1/1b3B2/2N2P2/PP5P/2KRR3 b - - 0 20".into();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         let tree = &mut SearchTree::new(pos, 5, 0, tx2, rx1);

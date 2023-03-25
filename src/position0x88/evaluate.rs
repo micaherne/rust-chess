@@ -1,4 +1,4 @@
-use crate::position::{movegen_simple::PIECE_TYPES_COUNT, piece_colour, Position};
+use crate::position0x88::{movegen_simple::PIECE_TYPES_COUNT, piece_colour, Position0x88};
 
 use super::{
     file,
@@ -80,7 +80,7 @@ fn piece_square_index_rev(index0x88: SquareIndex) -> SquareIndex {
     (rank(index0x88) * 8 + file(index0x88)) as SquareIndex
 }
 
-fn game_phase(position: &Position) -> i32 {
+fn game_phase(position: &Position0x88) -> i32 {
     let mut phase = TOTAL_PHASE;
     for sq in square_iter() {
         let piece_type = piece_type(position.squares[sq]);
@@ -92,7 +92,7 @@ fn game_phase(position: &Position) -> i32 {
 /// Piece values in centipawns.
 pub const PIECE_VALUES: [Score; PIECE_TYPES_COUNT] = [0, 100, 500, 300, 325, 900, 2_000_000];
 
-pub fn evaluate(position: &Position) -> Score {
+pub fn evaluate(position: &Position0x88) -> Score {
     let mut middlegame_score: Score = 0;
     let mut endgame_score: Score = 0;
 
@@ -176,9 +176,9 @@ mod test {
 
     #[test]
     fn test_game_phase() {
-        let pos: Position = STARTPOS_FEN.into();
+        let pos: Position0x88 = STARTPOS_FEN.into();
         assert_eq!(0, game_phase(&pos));
-        let pos: Position = "8/8/5k2/8/K7/8/8/8 w - - 0 1".into();
+        let pos: Position0x88 = "8/8/5k2/8/K7/8/8/8 w - - 0 1".into();
         assert_eq!(256, game_phase(&pos));
     }
 }

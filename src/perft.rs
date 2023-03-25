@@ -7,17 +7,17 @@ use std::{
 
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position::{
+use crate::position0x88::{
     make_moves::MakeMoves,
     movegen::GenerateMoves,
     notation::{set_from_fen, to_fen},
-    Position,
+    Position0x88,
 };
 
 #[cfg(debug_assertions)]
-use crate::position::notation::square_index_to_str;
+use crate::position0x88::notation::square_index_to_str;
 
-pub fn perft(position: &mut Position, depth: u16) -> usize {
+pub fn perft(position: &mut Position0x88, depth: u16) -> usize {
     if depth == 0 {
         return 1;
     }
@@ -42,7 +42,7 @@ pub fn perft(position: &mut Position, depth: u16) -> usize {
     nodes
 }
 
-pub fn divide(position: &mut Position, depth: u16) -> DivideResults {
+pub fn divide(position: &mut Position0x88, depth: u16) -> DivideResults {
     let mut result = DivideResults::default();
 
     let moves = position.generate_moves();
@@ -169,7 +169,7 @@ fn get_diff(
 ) -> DivideDiff {
     // Get perft at a certain depth.
     let their_perft = stockfish.get_perft(fen, moves, depth);
-    let mut pos = Position::default();
+    let mut pos = Position0x88::default();
     set_from_fen(&mut pos, fen).unwrap();
 
     let l: Vec<LongAlgebraicNotationMove> = moves
@@ -303,7 +303,7 @@ pub fn run_divide(args: VecDeque<String>) {
     let depth = &args[1];
     let depth_int: u16 = depth.parse().unwrap_or(1);
 
-    let mut position = Position::default();
+    let mut position = Position0x88::default();
     let setup_result = set_from_fen(&mut position, fen);
 
     if setup_result.is_err() {

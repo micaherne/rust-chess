@@ -1,10 +1,13 @@
-use crate::fen::{FenError, STARTPOS_FEN};
+use crate::{
+    fen::{ConsumeFen, Fen, FenError, STARTPOS_FEN},
+    position::SetPosition,
+};
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
     movegen_simple::is_valid_square, square_index, BoardSide, CastlingRights, Colour, Piece,
-    PieceType, Position, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK, EMPTY, KING, KNIGHT, PAWN,
-    QUEEN, ROOK, WHITE,
+    PieceType, Position0x88, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK, EMPTY, KING, KNIGHT,
+    PAWN, QUEEN, ROOK, WHITE,
 };
 
 use regex::Regex;
@@ -13,15 +16,77 @@ pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
 pub const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
 pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
 
-impl From<&str> for Position {
+impl From<&str> for Position0x88 {
     fn from(value: &str) -> Self {
-        let mut pos = Position::default();
+        let mut pos = Position0x88::default();
         set_from_fen(&mut pos, value).unwrap();
         pos
     }
 }
 
-pub fn to_fen(position: &Position) -> String {
+impl ConsumeFen for Position0x88 {
+    fn set_from_fen(&mut self, fen: Fen) -> Result<(), FenError> {
+        if let Err(e) = set_piece_placements(self, &fen.piece_placements) {
+            return Err(e);
+        }
+
+        match char_to_colour(fen.side_to_move.chars().next().unwrap()) {
+            None => return Err(FenError::InvalidColourToMove),
+            Some(side) => self.side_to_move = side,
+        }
+
+        let re = Regex::new("^([KQkq]+|-)$").unwrap();
+        let castling_chars = &fen.castling;
+        if !re.is_match(castling_chars) {
+            return Err(FenError::InvalidCastlingInfo);
+        }
+
+        self.castling_rights = CastlingRights::new();
+
+        if castling_chars != "-" {
+            for c in castling_chars.chars() {
+                let colour = match c.to_ascii_lowercase() == c {
+                    true => BLACK,
+                    false => WHITE,
+                };
+                let side = match c.to_ascii_lowercase() {
+                    'k' => BoardSide::Kingside,
+                    'q' => BoardSide::Queenside,
+                    _ => return Err(FenError::InvalidCastlingInfo),
+                };
+                self.castling_allow(colour, Some(side));
+            }
+        }
+
+        let ep_square_str = fen.ep_square.as_str();
+        let ep_square = match ep_square_str {
+            "-" => 0,
+            x => {
+                let ep = str_to_square_index(x);
+                match ep {
+                    Some(sq) => sq,
+                    None => return Err(FenError::InvalidSquare),
+                }
+            }
+        };
+
+        self.set_ep_square(ep_square);
+
+        match fen.halfmove.parse::<u32>() {
+            Err(_e) => return Err(FenError::InvalidDigit),
+            Ok(halfmove) => self.halfmove_clock = halfmove,
+        }
+
+        match fen.fullmove.parse::<u32>() {
+            Err(_e) => return Err(FenError::InvalidDigit),
+            Ok(fullmove) => self.fullmove_number = fullmove,
+        }
+
+        Ok(())
+    }
+}
+
+pub fn to_fen(position: &Position0x88) -> String {
     let mut result = String::new();
     for line_start in (0..8).rev() {
         let mut empty_square_count = 0;
@@ -67,92 +132,13 @@ pub fn to_fen(position: &Position) -> String {
     result
 }
 
-pub fn set_from_fen(position: &mut Position, fen: &str) -> Result<(), FenError> {
-    // Check count first as it uses up the iterator.
-    let cnt = fen.split_ascii_whitespace().count();
-    if cnt != 4 && cnt != 6 {
-        return Err(FenError::IncorrectNumberOfParts);
-    }
-
-    let mut parts = fen.split_ascii_whitespace();
-    let piece_placements = parts.next().unwrap();
-
-    if let Err(e) = set_piece_placements(position, piece_placements) {
-        return Err(e);
-    }
-
-    let side_to_move = parts.next().unwrap();
-    if side_to_move.len() != 1 {
-        return Err(FenError::InvalidColourToMove);
-    }
-    match char_to_colour(side_to_move.chars().next().unwrap()) {
-        None => return Err(FenError::InvalidColourToMove),
-        Some(side) => position.side_to_move = side,
-    }
-
-    let re = Regex::new("^([KQkq]+|-)$").unwrap();
-    let castling_chars = parts.next().unwrap();
-    if !re.is_match(castling_chars) {
-        return Err(FenError::InvalidCastlingInfo);
-    }
-
-    position.castling_rights = CastlingRights::new();
-
-    if castling_chars != "-" {
-        for c in castling_chars.chars() {
-            let colour = match c.to_ascii_lowercase() == c {
-                true => BLACK,
-                false => WHITE,
-            };
-            let side = match c.to_ascii_lowercase() {
-                'k' => BoardSide::Kingside,
-                'q' => BoardSide::Queenside,
-                _ => return Err(FenError::InvalidCastlingInfo),
-            };
-            position.castling_allow(colour, Some(side));
-        }
-    }
-
-    let ep_square_str = parts.next().unwrap();
-    let ep_square = match ep_square_str {
-        "-" => 0,
-        x => {
-            let ep = str_to_square_index(x);
-            match ep {
-                Some(sq) => sq,
-                None => return Err(FenError::InvalidSquare),
-            }
-        }
-    };
-
-    position.set_ep_square(ep_square);
-
-    let halfmove = parts.next();
-
-    if halfmove == None {
-        position.halfmove_clock = 0;
-        position.fullmove_number = 1;
-        return Ok(());
-    }
-
-    let halfmove_str = halfmove.unwrap();
-
-    match halfmove_str.parse::<u32>() {
-        Err(_e) => return Err(FenError::InvalidDigit),
-        Ok(halfmove) => position.halfmove_clock = halfmove,
-    }
-
-    let fullmove_str = parts.next().unwrap();
-    match fullmove_str.parse::<u32>() {
-        Err(_e) => return Err(FenError::InvalidDigit),
-        Ok(fullmove) => position.fullmove_number = fullmove,
-    }
-
-    Ok(())
+#[deprecated]
+pub fn set_from_fen(position: &mut Position0x88, fen: &str) -> Result<(), FenError> {
+    position.set_from_fen(fen.try_into()?)
 }
 
 pub fn set_piece_placements(
-    position: &mut Position,
+    position: &mut Position0x88,
     piece_placements: &str,
 ) -> Result<(), FenError> {
     if piece_placements.split('/').count() != 8 {
@@ -200,7 +186,7 @@ pub fn set_piece_placements(
     Ok(())
 }
 
-pub fn set_startpos(position: &mut Position) {
+pub fn set_startpos(position: &mut Position0x88) {
     set_from_fen(position, STARTPOS_FEN).unwrap();
 }
 
@@ -350,7 +336,7 @@ mod test {
 
     #[test]
     fn test_set_piece_placements() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_piece_placements(&mut position, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
             .expect("Failed");
         assert_eq!(ROOK, position.squares[0x00]);
@@ -360,7 +346,7 @@ mod test {
 
     #[test]
     fn test_set_from_fen() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_from_fen(&mut position, STARTPOS_FEN).expect("Failed");
         assert_eq!(ROOK, position.squares[0x00]);
         assert_eq!(0x74, position.king_squares[BLACK as usize]);

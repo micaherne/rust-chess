@@ -6,16 +6,16 @@ use std::{
 use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
 
 use crate::{
-    position::{
+    position0x88::{
         make_moves::{MakeMoves, MoveUndo},
         notation::{set_from_fen, set_startpos},
-        Position,
+        Position0x88,
     },
     search::SearchTree,
 };
 
 pub struct Engine {
-    pub position: Position,
+    pub position: Position0x88,
     options: EngineOptions,
     initialised: bool,
     receiver: Receiver<InputMessage>,
@@ -31,7 +31,7 @@ struct EngineOptions {
 impl Engine {
     pub fn new(receiver: Receiver<InputMessage>, sender: Sender<OutputMessage>) -> Engine {
         return Engine {
-            position: Position::default(),
+            position: Position0x88::default(),
             options: EngineOptions {
                 debug: false,
                 options: HashMap::new(),

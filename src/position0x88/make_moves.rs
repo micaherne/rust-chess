@@ -1,15 +1,18 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position::{
-    file, get_piece,
-    notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
-    opposite_colour, piece_colour, piece_type, rank, square_index, BoardSide, BLACK, EMPTY, KING,
-    PAWN, ROOK, WHITE,
+use crate::{
+    position::SetPosition,
+    position0x88::{
+        file, get_piece,
+        notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
+        opposite_colour, piece_colour, piece_type, rank, square_index, BoardSide, BLACK, EMPTY,
+        KING, PAWN, ROOK, WHITE,
+    },
 };
 
 use super::{
     notation::{char_to_piece_type, str_to_square_index},
-    CastlingRights, Piece, PieceType, Position, SquareIndex,
+    CastlingRights, Piece, PieceType, Position0x88, SquareIndex,
 };
 
 pub trait ExtractMove {
@@ -48,18 +51,13 @@ pub struct MoveUndo {
     castling_rights: CastlingRights,
 }
 
-pub trait MakeMoves {
+pub trait MakeMoves<S, P> {
     fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo>;
-    fn make_move(
-        &mut self,
-        from_index: SquareIndex,
-        to_index: SquareIndex,
-        queening_piece: Option<PieceType>,
-    ) -> MoveUndo;
+    fn make_move(&mut self, from_index: S, to_index: S, queening_piece: Option<P>) -> MoveUndo;
     fn undo_move(&mut self, undo: MoveUndo);
 }
 
-impl MakeMoves for Position {
+impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
     fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo> {
         let mut result: Vec<MoveUndo> = vec![];
         for mv in moves {
@@ -287,7 +285,7 @@ mod test {
 
     use crate::{
         fen::STARTPOS_FEN,
-        position::{
+        position0x88::{
             notation::{set_from_fen, set_startpos},
             KNIGHT,
         },
@@ -319,7 +317,7 @@ mod test {
 
     #[test]
     fn test_move_ep() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         let original_fen = "6k1/8/8/3pP3/8/8/8/6K1 w - d6 2 1";
         set_from_fen(&mut position, &original_fen).unwrap();
         assert_eq!(0x53, position.ep_square);
@@ -333,7 +331,7 @@ mod test {
     #[test]
     fn test_make_move() {
         let fen = "r3kbnr/2qn2p1/8/pppBpp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR w KQkq - 0 1";
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_from_fen(&mut position, fen).unwrap();
         position.make_move(0x43, 0x70, None);
         assert_eq!(0b1110, position.castling_rights.flags);
@@ -342,7 +340,7 @@ mod test {
     #[test]
     fn test_make_move2() {
         let fen = "rn3b1r/1bqpp1k1/p7/2p2p1p/P2P4/2N1P1P1/1pK1NPP1/R3QB1R b - - 0 1";
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_from_fen(&mut position, fen).unwrap();
         let undo = position.make_move(17, 0, Some(KNIGHT));
         position.undo_move(undo);
@@ -351,7 +349,7 @@ mod test {
 
     #[test]
     fn test_undo_move() {
-        let mut position = Position::default();
+        let mut position = Position0x88::default();
         set_startpos(&mut position);
         let moves: Vec<LongAlgebraicNotationMove> = [
             "e2e4", "e7e5", "f2f4", "e5f4", "f1b5", "b8c6", "g1f3", "a7a6", "e1g1",

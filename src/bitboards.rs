@@ -1,4 +1,4 @@
-use crate::position::{
+use crate::position0x88::{
     index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex, BISHOP, BLACK, QUEEN,
     ROOK, WHITE,
 };

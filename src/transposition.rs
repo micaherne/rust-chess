@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::SystemTime};
 use rand::RngCore;
 
 use crate::{
-    position::{
+    position0x88::{
         evaluate::Score, movegen::Move, movegen_simple::PIECE_TYPES_COUNT, BLACK, NONE, WHITE,
     },
     search::Depth,
@@ -117,7 +117,7 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
-    use crate::position::{make_moves::MakeMoves, Position};
+    use crate::position0x88::{make_moves::MakeMoves, Position0x88};
 
     use super::*;
 
@@ -155,13 +155,13 @@ mod test {
 
     #[test]
     fn test_hash() {
-        let pos1: Position = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
-        let pos2: Position = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
+        let pos1: Position0x88 = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
+        let pos2: Position0x88 = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
-        let mut pos1: Position =
+        let mut pos1: Position0x88 =
             "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3".into();
-        let pos2: Position = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3".into();
+        let pos2: Position0x88 = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3".into();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
         let pre1 = pos1.hash_key();
