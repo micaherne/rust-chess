@@ -5,20 +5,13 @@ use crate::{position0x88::{antidiagonal, diagonal, piece_colour, piece_type, EMP
 use super::{
     file,
     notation::{KING_HOME_SQUARES},
-    opposite_colour, rank, BoardSide, Colour, Piece, PieceType, Position0x88, SquareIndex, BISHOP,
-    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, movegen::{GenerateMoves, Move}, index64to0x88,
+    opposite_colour, rank, BoardSide, Colour, PieceStandard, PieceType, Position0x88, SquareIndex0x88, BISHOP,
+    BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, movegen::{Move0x88}, index64to0x88,
 };
-
-
-impl GenerateMoves for Position0x88 {
-    fn generate_moves(&self) -> Vec<Move> {
-        generate_moves(&self)
-    }
-}
 
 pub type Direction = i16; // Not i8 as it simplifies adding it and ANDing with 0x88.
 
-pub type SquareAndPiece = (SquareIndex, Piece);
+pub type SquareAndPiece = (SquareIndex0x88, PieceStandard);
 
 pub const PIECE_TYPES_COUNT: usize = 7;
 const MAX_DIRECTIONS_COUNT: usize = 8;
@@ -45,8 +38,8 @@ const PAWN_QUEEN_RANK: [u8; 2] = [7, 0];
 
 const ALLOWED_QUEENING_PIECES: [PieceType; 4] = [QUEEN, ROOK, BISHOP, KNIGHT];
 
-pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
-    let mut result: Vec<Move> = vec![];
+pub fn generate_moves(position: &Position0x88) -> Vec<Move0x88> {
+    let mut result: Vec<Move0x88> = vec![];
     let side_to_move = position.side_to_move;
 
     let is_check = side_to_move_in_check(position);
@@ -102,7 +95,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
                     if !is_valid_square(next_square) {
                         break;
                     }
-                    if position.squares[next_square as SquareIndex] != EMPTY {
+                    if position.squares0x88[next_square as SquareIndex0x88] != EMPTY {
                         break;
                     }
 
@@ -111,7 +104,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
 
                     create_pawn_moves(
                         piece_square,
-                        next_square as SquareIndex,
+                        next_square as SquareIndex0x88,
                         is_queening,
                         &mut result,
                     );
@@ -142,7 +135,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
                 let is_en_passent =
                     (to_square as usize == position.ep_square) && position.ep_square != 0;
 
-                if !is_en_passent && position.squares[to_square as SquareIndex] == EMPTY {
+                if !is_en_passent && position.squares0x88[to_square as SquareIndex0x88] == EMPTY {
                     continue;
                 }
 
@@ -156,10 +149,10 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
                         false => position.ep_square + 16,
                     }
                 } else {
-                    to_square as SquareIndex
+                    to_square as SquareIndex0x88
                 };
 
-                let attacked_colour = piece_colour(position.squares[capture_piece_square]);
+                let attacked_colour = piece_colour(position.squares0x88[capture_piece_square]);
 
                 if attacked_colour == None || attacked_colour == Some(current_piece_colour) {
                     continue;
@@ -170,7 +163,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
 
                 create_pawn_moves(
                     piece_square,
-                    to_square as SquareIndex,
+                    to_square as SquareIndex0x88,
                     is_queening,
                     &mut result,
                 );
@@ -181,7 +174,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
                 create_non_sliding_moves(position, piece_square, piece_type, &mut result);
             }
         } else if piece_type == KING {
-            let mut temp_moves: Vec<Move> = vec![];
+            let mut temp_moves: Vec<Move0x88> = vec![];
             create_non_sliding_moves(position, piece_square, piece_type, &mut temp_moves);
 
             // Check for check and add to result if ok.
@@ -193,7 +186,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
                         // it's horizontal
                         && potential_move.from_index.abs_diff(potential_move.to_index) == 1
                         // and not a capture
-                        && super::piece_type(position.squares[potential_move.to_index]) == EMPTY
+                        && super::piece_type(position.squares0x88[potential_move.to_index]) == EMPTY
                     {
                         let move_dir =
                             (potential_move.to_index as i32) - (potential_move.from_index as i32);
@@ -225,7 +218,7 @@ pub fn generate_moves(position: &Position0x88) -> Vec<Move> {
 
 /// Test for the capture pawn being pinned against the king in an en passent capture.
 /// This does not check if the position is en passent so should only be called when we already know it is.
-fn is_en_passent_pin(position: &Position0x88, capturing_pawn_square: SquareIndex) -> bool {
+fn is_en_passent_pin(position: &Position0x88, capturing_pawn_square: SquareIndex0x88) -> bool {
 
     let captured_square = match capturing_pawn_square < position.ep_square {
         true => position.ep_square - 16,
@@ -273,15 +266,15 @@ fn is_en_passent_pin(position: &Position0x88, capturing_pawn_square: SquareIndex
     let mut next_square = position.king_squares[position.side_to_move as usize] as i16 + dir_from_king;
 
     while is_valid_square(next_square) {
-        if next_square as usize == capturing_pawn_square || next_square as usize == captured_square || position.squares[next_square as usize] == EMPTY {
+        if next_square as usize == capturing_pawn_square || next_square as usize == captured_square || position.squares0x88[next_square as usize] == EMPTY {
             next_square += dir_from_king;
             continue;
         }
         
-        let pt = piece_type(position.squares[next_square as usize]);
+        let pt = piece_type(position.squares0x88[next_square as usize]);
         debug_assert!(pt != EMPTY);
 
-        let colour = piece_colour(position.squares[next_square as usize]);
+        let colour = piece_colour(position.squares0x88[next_square as usize]);
 
         debug_assert!(colour.is_some());
 
@@ -296,7 +289,7 @@ fn is_en_passent_pin(position: &Position0x88, capturing_pawn_square: SquareIndex
     false
 }
 
-fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: BoardSide, moves: &mut Vec<Move>) {
+fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: BoardSide, moves: &mut Vec<Move0x88>) {
     
     // This also implicitly asserts that the rook is there.
     if !position.castling_rights.allowed(colour, board_side) {
@@ -305,27 +298,27 @@ fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: 
     
     let king_square = position.king_squares[colour as usize];
     
-    debug_assert!(piece_type(position.squares[king_square]) == KING );
+    debug_assert!(piece_type(position.squares0x88[king_square]) == KING );
 
     let move_dir: Direction = match board_side {
         BoardSide::Kingside => 1,
         BoardSide::Queenside => -1
     };
 
-    debug_assert!(piece_type(position.squares[(king_square as i16 + move_dir) as SquareIndex]) == EMPTY);
+    debug_assert!(piece_type(position.squares0x88[(king_square as i16 + move_dir) as SquareIndex0x88]) == EMPTY);
 
-    let to_square = (king_square as i16 + 2i16 * move_dir) as SquareIndex;
+    let to_square = (king_square as i16 + 2i16 * move_dir) as SquareIndex0x88;
 
     debug_assert!(is_valid_square(to_square as i16));
 
     let squares_are_empty = match board_side {
         BoardSide::Kingside => {
-            position.squares[to_square as SquareIndex] == EMPTY
+            position.squares0x88[to_square as SquareIndex0x88] == EMPTY
         }
         BoardSide::Queenside => {
-            let knights_square = (to_square as i16 + move_dir) as SquareIndex;
-            position.squares[to_square as SquareIndex] == EMPTY
-                && position.squares[knights_square]
+            let knights_square = (to_square as i16 + move_dir) as SquareIndex0x88;
+            position.squares0x88[to_square as SquareIndex0x88] == EMPTY
+                && position.squares0x88[knights_square]
                     == EMPTY
         }
     };
@@ -334,7 +327,7 @@ fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: 
         return;
     }
 
-    let castling_move = Move {
+    let castling_move = Move0x88 {
         from_index: king_square,
         to_index: to_square,
         queening_piece: None,
@@ -349,7 +342,7 @@ fn add_castling_if_allowed(position: &Position0x88, colour: Colour, board_side: 
 
 }
 
-fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<Move> {
+fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move0x88>) -> Vec<Move0x88> {
     let mut result = vec![];
     let king_square = position.king_squares[position.side_to_move as usize];
 
@@ -377,7 +370,7 @@ fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<M
     if attacking_piece == KNIGHT || attacking_piece == PAWN {
         for m in moves {
             // Check for e.p. capture of a checking pawn.
-            if attacking_piece == PAWN && m.to_index == position.ep_square && piece_type(position.squares[m.from_index]) == PAWN {
+            if attacking_piece == PAWN && m.to_index == position.ep_square && piece_type(position.squares0x88[m.from_index]) == PAWN {
                 if rank(attackers[0].0) == rank(m.from_index) 
                     && file(attackers[0].0) == file(m.to_index) {
                         result.push(m);
@@ -398,7 +391,7 @@ fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<M
 
     let direction = opt_direction.unwrap();
 
-    let mut intermediate_squares: Vec<SquareIndex> = vec![];
+    let mut intermediate_squares: Vec<SquareIndex0x88> = vec![];
 
     let mut next_square = king_square as Direction;
     loop {
@@ -407,11 +400,11 @@ fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<M
             break;
         }
 
-        if position.squares[next_square as SquareIndex] != EMPTY {
+        if position.squares0x88[next_square as SquareIndex0x88] != EMPTY {
             break;
         }
 
-        intermediate_squares.push(next_square as SquareIndex);
+        intermediate_squares.push(next_square as SquareIndex0x88);
     }
 
     for m in moves {
@@ -428,10 +421,10 @@ fn filter_non_check_evasions(position: &Position0x88, moves: Vec<Move>) -> Vec<M
 /// Find pieces attacking the piece on the given square.
 fn attackers_of_square(
     position: &Position0x88,
-    piece_square: SquareIndex,
+    piece_square: SquareIndex0x88,
 ) -> Vec<SquareAndPiece> {
     let mut result = vec![];
-    let opt_piece_colour = piece_colour(position.squares[piece_square]);
+    let opt_piece_colour = piece_colour(position.squares0x88[piece_square]);
     if opt_piece_colour == None {
         return result;
     }
@@ -473,7 +466,7 @@ fn attackers_of_square(
                 continue;
             }
             let directions_piece = p.0;
-            let test_piece = position.squares[test_square as usize];
+            let test_piece = position.squares0x88[test_square as usize];
             let test_piece_type = piece_type(test_piece);
             if test_piece_type == EMPTY {
                 continue;
@@ -483,7 +476,7 @@ fn attackers_of_square(
                     None => continue,
                     Some(pc) => {
                         if pc != the_piece_colour {
-                            result.push((test_square as SquareIndex, test_piece));
+                            result.push((test_square as SquareIndex0x88, test_piece));
                         }
                     }
                 }
@@ -494,9 +487,9 @@ fn attackers_of_square(
     result
 }
 
-pub fn allowed_directions(position: &Position0x88, piece_square: SquareIndex) -> PieceDirections {
+pub fn allowed_directions(position: &Position0x88, piece_square: SquareIndex0x88) -> PieceDirections {
     let opt_pinned_direction = pinned_against_king_direction(position, piece_square);
-    let piece_type = piece_type(position.squares[piece_square]);
+    let piece_type = piece_type(position.squares0x88[piece_square]);
 
     if piece_type == EMPTY {
         return [0i16; MAX_DIRECTIONS_COUNT];
@@ -518,9 +511,9 @@ pub fn allowed_directions(position: &Position0x88, piece_square: SquareIndex) ->
 
 pub fn is_square_attacked(
     position: &Position0x88,
-    square: SquareIndex,
+    square: SquareIndex0x88,
     moving_colour: Colour,
-    ignore_square: Option<SquareIndex>,
+    ignore_square: Option<SquareIndex0x88>,
 ) -> bool {
     if is_square_attacked_by_slider(position, square, moving_colour, ignore_square) {
         return true;
@@ -537,7 +530,7 @@ pub fn is_square_attacked(
 
 pub fn is_square_attacked_by_non_slider(
     position: &Position0x88,
-    square: SquareIndex,
+    square: SquareIndex0x88,
     moving_colour: Colour,
     test_piece_type: PieceType,
 ) -> bool {
@@ -556,7 +549,7 @@ pub fn is_square_attacked_by_non_slider(
         if !is_valid_square(attack_square) {
             continue;
         }
-        let attack_piece = position.squares[attack_square as usize];
+        let attack_piece = position.squares0x88[attack_square as usize];
         if super::piece_type(attack_piece) != test_piece_type {
             continue;
         }
@@ -574,9 +567,9 @@ pub fn is_square_attacked_by_non_slider(
 
 pub fn is_square_attacked_by_slider(
     position: &Position0x88,
-    square: SquareIndex,
+    square: SquareIndex0x88,
     moving_colour: Colour,
-    ignore_square: Option<SquareIndex>,
+    ignore_square: Option<SquareIndex0x88>,
 ) -> bool {
     for test_piece in [ROOK, BISHOP] {
         for dir in PIECE_DIRECTIONS[test_piece as usize] {
@@ -603,7 +596,7 @@ pub fn is_square_attacked_by_slider(
 /// Check that the king is not moving into check.
 /// Note that this doesn't check it's an actual legal move.
 /// TODO: Rename this function.
-pub fn is_legal_king_move(position: &Position0x88, move_to_test: &Move, moving_colour: Colour) -> bool {
+pub fn is_legal_king_move(position: &Position0x88, move_to_test: &Move0x88, moving_colour: Colour) -> bool {
     !is_square_attacked(
         position,
         move_to_test.to_index,
@@ -614,16 +607,16 @@ pub fn is_legal_king_move(position: &Position0x88, move_to_test: &Move, moving_c
 
 pub fn create_sliding_moves(
     position: &Position0x88,
-    piece_square: SquareIndex,
+    piece_square: SquareIndex0x88,
     allow_captures: bool,
-    result: &mut Vec<Move>,
+    result: &mut Vec<Move0x88>,
 ) {
-    let opt_current_piece_colour = piece_colour(position.squares[piece_square]);
+    let opt_current_piece_colour = piece_colour(position.squares0x88[piece_square]);
     if opt_current_piece_colour == None {
         // Should not happen.
         return;
     }
-    let piece_type = piece_type(position.squares[piece_square]);
+    let piece_type = piece_type(position.squares0x88[piece_square]);
     let current_piece_colour = opt_current_piece_colour.unwrap();
     let allowed_directions = allowed_directions(position, piece_square);
     for direction in allowed_directions {
@@ -643,15 +636,15 @@ pub fn create_sliding_moves(
                 break;
             }
 
-            if position.squares[next_square as usize] == EMPTY {
-                result.push(Move {
+            if position.squares0x88[next_square as usize] == EMPTY {
+                result.push(Move0x88 {
                     from_index: piece_square,
-                    to_index: next_square as SquareIndex,
+                    to_index: next_square as SquareIndex0x88,
                     queening_piece: None,
                 });
                 continue;
             }
-            match piece_colour(position.squares[next_square as usize]) {
+            match piece_colour(position.squares0x88[next_square as usize]) {
                 Some(colour) => {
                     if !allow_captures {
                         break;
@@ -660,9 +653,9 @@ pub fn create_sliding_moves(
                     if colour == current_piece_colour {
                         break;
                     } else {
-                        result.push(Move {
+                        result.push(Move0x88 {
                             from_index: piece_square,
-                            to_index: next_square as SquareIndex,
+                            to_index: next_square as SquareIndex0x88,
                             queening_piece: None,
                         });
                         break;
@@ -676,11 +669,11 @@ pub fn create_sliding_moves(
 
 pub fn create_non_sliding_moves(
     position: &Position0x88,
-    piece_square: SquareIndex,
+    piece_square: SquareIndex0x88,
     piece_type: PieceType,
-    result: &mut Vec<Move>,
+    result: &mut Vec<Move0x88>,
 ) {
-    let opt_current_piece_colour = piece_colour(position.squares[piece_square]);
+    let opt_current_piece_colour = piece_colour(position.squares0x88[piece_square]);
     if opt_current_piece_colour == None {
         // Should not happen.
         return;
@@ -691,8 +684,8 @@ pub fn create_non_sliding_moves(
         if !is_valid_square(next_square) {
             continue;
         }
-        if position.squares[next_square as usize] != EMPTY {
-            let capture_colour = piece_colour(position.squares[next_square as usize]);
+        if position.squares0x88[next_square as usize] != EMPTY {
+            let capture_colour = piece_colour(position.squares0x88[next_square as usize]);
             // We know it's a real colour as it's not empty but unwrap it properly anyway.
             if let None = capture_colour {
                 // This should never happen.
@@ -702,30 +695,30 @@ pub fn create_non_sliding_moves(
                 continue;
             }
         }
-        result.push(Move {
+        result.push(Move0x88 {
             from_index: piece_square,
-            to_index: next_square as SquareIndex,
+            to_index: next_square as SquareIndex0x88,
             queening_piece: None,
         });
     }
 }
 
 pub fn create_pawn_moves(
-    from_square: SquareIndex,
-    to_square: SquareIndex,
+    from_square: SquareIndex0x88,
+    to_square: SquareIndex0x88,
     is_queening: bool,
-    result: &mut Vec<Move>,
+    result: &mut Vec<Move0x88>,
 ) {
     if is_queening {
         for queening_piece in ALLOWED_QUEENING_PIECES {
-            result.push(Move {
+            result.push(Move0x88 {
                 from_index: from_square,
                 to_index: to_square,
                 queening_piece: Some(queening_piece),
             });
         }
     } else {
-        result.push(Move {
+        result.push(Move0x88 {
             from_index: from_square,
             to_index: to_square,
             queening_piece: None,
@@ -760,20 +753,20 @@ pub fn can_evade_check(position: &Position0x88) -> bool {
         if !is_valid_square(to_square) {
             continue;
         }
-        if position.squares[to_square as SquareIndex] == EMPTY {
-            if !is_square_attacked(&position, to_square as SquareIndex, position.side_to_move, None) {
+        if position.squares0x88[to_square as SquareIndex0x88] == EMPTY {
+            if !is_square_attacked(&position, to_square as SquareIndex0x88, position.side_to_move, None) {
                 return true;
             } else {
                 continue;
             }
         } else {
-            let piece_colour = piece_colour(position.squares[to_square as SquareIndex]).unwrap();
+            let piece_colour = piece_colour(position.squares0x88[to_square as SquareIndex0x88]).unwrap();
             // Blocked by own piece.
             if piece_colour == position.side_to_move {
                 continue;
             }
             // Can capture the piece.
-            if !is_square_attacked(&position, to_square as SquareIndex, position.side_to_move, None) {
+            if !is_square_attacked(&position, to_square as SquareIndex0x88, position.side_to_move, None) {
                 return true;
             }
         }
@@ -840,7 +833,7 @@ pub fn can_evade_check(position: &Position0x88) -> bool {
                 if !is_valid_square(poss_pawn_square) {
                     continue;
                 }
-                let poss_piece = position.squares[poss_pawn_square as usize];
+                let poss_piece = position.squares0x88[poss_pawn_square as usize];
                 if piece_type(poss_piece) == PAWN 
                     && piece_colour(poss_piece).unwrap() == position.side_to_move {
                         return true;
@@ -865,7 +858,7 @@ pub fn can_evade_check(position: &Position0x88) -> bool {
                     if !is_valid_square(test_square) {
                         break;
                     }
-                    let piece = position.squares[test_square as usize];
+                    let piece = position.squares0x88[test_square as usize];
                     if piece == EMPTY {
                         continue;
                     }
@@ -899,9 +892,9 @@ pub fn is_sliding_piece(piece_type: PieceType) -> bool {
 /// Check if the piece is pinned against the king, and return the direction of the pin if it is.
 pub fn pinned_against_king_direction(
     position: &Position0x88,
-    piece_square: SquareIndex,
+    piece_square: SquareIndex0x88,
 ) -> Option<Direction> {
-    if position.squares[piece_square] == EMPTY {
+    if position.squares0x88[piece_square] == EMPTY {
         return None;
     }
 
@@ -952,10 +945,10 @@ pub const fn is_valid_square(square: i16) -> bool {
 
 pub fn next_piece_in_direction(
     position: &Position0x88,
-    from: SquareIndex,
+    from: SquareIndex0x88,
     direction: Direction,
-    ignore_square: Option<SquareIndex>,
-) -> Option<(SquareIndex, Piece)> {
+    ignore_square: Option<SquareIndex0x88>,
+) -> Option<(SquareIndex0x88, PieceStandard)> {
     if direction == 0 {
         // TODO: This should not be called in the first place.
         return None;
@@ -971,9 +964,9 @@ pub fn next_piece_in_direction(
                 continue;
             }
         }
-        let piece = position.squares[next_square as usize];
+        let piece = position.squares0x88[next_square as usize];
         if piece != EMPTY {
-            return Some((next_square as SquareIndex, piece));
+            return Some((next_square as SquareIndex0x88, piece));
         }
         next_square += direction as i16;
     }
@@ -981,7 +974,7 @@ pub fn next_piece_in_direction(
 }
 
 /// Find the direction from one square to the other, if they are on the same line or diagonal.
-pub fn direction(from: SquareIndex, to: SquareIndex) -> Option<Direction> {
+pub fn direction(from: SquareIndex0x88, to: SquareIndex0x88) -> Option<Direction> {
     debug_assert!(from != to);
     if rank(from) == rank(to) {
         Some(if from > to { -1 } else { 1 })
@@ -1005,8 +998,8 @@ mod test {
     use crate::{position0x88::{
         get_piece,
         notation::{set_from_fen, set_startpos},
-        BLACK, KING, PAWN, WHITE,
-    }, perft::{perft, divide}, position::SetPosition};
+        BLACK, KING, PAWN, WHITE, movegen::GenerateMoves,
+    }, position::SetPosition, perft::Perft};
 
     use super::*;
 
@@ -1050,7 +1043,7 @@ mod test {
             "rnb1kbnr/ppq1pppp/2pp4/8/6P1/2P5/PP1PPPBP/RNBQK1NR w KQkq -",
         )
         .unwrap();
-        let mut r: Vec<Move> = vec![];
+        let mut r: Vec<Move0x88> = vec![];
         create_non_sliding_moves(
             &position,
             position.king_squares[WHITE as usize],
@@ -1190,8 +1183,10 @@ mod test {
         // let fen = "2b1kbn1/r1pq4/n2p3p/3Pp1p1/ppP2PP1/PPB4P/Q4P2/RN2KBNR w KQ e6 0 3".to_string();
         let fen = "rB5r/pp4k1/5n2/q3p2p/Pb3pP1/1P1P3p/R2QPP2/1N2KBR1 b - g3 0 2".to_string();
         set_from_fen(&mut position, &fen).unwrap();
-        let moves = divide(&mut position, 1);
-        println!("{:#?}", moves);
+
+        let mut perft = Perft::new(position);
+        let moves = perft.divide(1);
+        assert_eq!(46, moves.total);
     }
 
     #[test]
@@ -1215,8 +1210,9 @@ mod test {
             set_from_fen(&mut position, fen).unwrap();
 
             println!("{}: {}", line_no, fen);
+            let mut perft = Perft::new(position);
             line_no += 1;
-            let perft1 = perft(&mut position, 1);
+            let perft1 = perft.perft(1).unwrap();
             // let perft2 = perft(&mut position, 2);
             // let perft3 = perft(&mut position, 3);
             // let perft4 = perft(&mut position, 4);

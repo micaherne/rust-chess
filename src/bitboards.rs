@@ -1,6 +1,9 @@
-use crate::position0x88::{
-    index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex, BISHOP, BLACK, QUEEN,
-    ROOK, WHITE,
+use crate::{
+    position::SquareIndex,
+    position0x88::{
+        index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex0x88, BISHOP,
+        BLACK, QUEEN, ROOK, WHITE,
+    },
 };
 
 pub type Bitboard = u64;
@@ -14,6 +17,79 @@ pub type EightBitboards = [Bitboard; 8];
 pub type SixteenBitboards = [Bitboard; 16];
 pub type SixtyFourBitboards = [Bitboard; 64];
 
+impl SquareIndex for SquareIndex64 {
+    fn to_algebraic_notation(&self) -> String {
+        let file = self % 8;
+        let rank = self / 8;
+        format!("{}{}", (file + b'a') as char, rank + 1)
+    }
+}
+
+pub trait BitboardOps {
+    fn squares_from_bitboard(&self) -> Vec<SquareIndex64>;
+    fn to_single_square(&self) -> Result<SquareIndex64, BitboardError>;
+    fn highest_set_bit(&self) -> SquareIndex64;
+    fn lowest_set_bit(&self) -> SquareIndex64;
+}
+
+impl BitboardOps for Bitboard {
+    #[inline]
+    fn squares_from_bitboard(&self) -> Vec<SquareIndex64> {
+        let mut bb = self.clone();
+        let mut result: Vec<SquareIndex64> = vec![];
+        while bb != 0 {
+            result.push(bb.trailing_zeros() as SquareIndex64);
+            bb &= bb - 1;
+        }
+        result
+    }
+
+    fn to_single_square(&self) -> Result<SquareIndex64, BitboardError> {
+        if self.count_ones() != 1 {
+            Err(BitboardError::NotASingleSquare)
+        } else {
+            Ok(self.trailing_zeros() as SquareIndex64)
+        }
+    }
+
+    /// Get the highest set bit.
+    /// Note that this will panic if the bitboard is zero so we must check that before calling.
+    #[inline]
+    fn highest_set_bit(&self) -> SquareIndex64 {
+        debug_assert!(*self != 0);
+
+        self.ilog2() as SquareIndex64
+    }
+
+    /// Get the lowest set bit.
+    /// Note that this will return an invalid value (64) if the bitboard is zero so we must check that before calling.
+    /// (We don't check for zero in this function for speed; it's usually known in calling code if it is zero.)
+    #[inline]
+    fn lowest_set_bit(&self) -> SquareIndex64 {
+        debug_assert!(*self != 0);
+
+        self.trailing_zeros() as SquareIndex64
+    }
+}
+
+#[macro_export]
+macro_rules! iterate_squares {
+    ($bitboard:ident -> $var:ident $expr:expr) => {
+        while $bitboard != 0 {
+            let $var = $bitboard.trailing_zeros();
+            $expr
+            $bitboard &= $bitboard - 1;
+        }
+    };
+}
+
+#[derive(Debug)]
+pub enum BitboardError {
+    NotASingleSquare,
+    InvalidSquare,
+}
+
+pub const PAWN_PUSH_DIRECTIONS: [Direction; 2] = [8, -8];
 pub const DIR_KNIGHT: [Direction; 8] = [-17, -15, -10, -6, 6, 10, 15, 17];
 
 /// Directions. Linear then diagonal.
@@ -233,6 +309,17 @@ const fn init_pawn_attacks() -> [SixtyFourBitboards; 2] {
         sq += 1;
     }
 
+    // Add pawn attacks on first and last rank. They are not needed for move generation, but
+    // they are useful for check detection.
+    let mut sq = 0;
+    while sq < 8 {
+        pawn_attack_squares[WHITE as usize][sq as usize] =
+            pawn_attack_squares[WHITE as usize][sq + 8 as usize] >> 8;
+        pawn_attack_squares[BLACK as usize][sq + 56 as usize] =
+            pawn_attack_squares[BLACK as usize][sq + 48 as usize] << 8;
+        sq += 1;
+    }
+
     pawn_attack_squares
 }
 
@@ -316,7 +403,8 @@ const fn init_king_attacks() -> SixtyFourBitboards {
             let dir = DIR_ALL_SLIDERS[i];
             let to = sq as i8 + dir;
             if to < 0 || to > 63 {
-                break;
+                i += 1;
+                continue;
             }
             if rank(to as SquareIndex64).abs_diff(from_rank) > 1
                 || file(to as SquareIndex64).abs_diff(from_file) > 1
@@ -333,7 +421,7 @@ const fn init_king_attacks() -> SixtyFourBitboards {
 }
 
 #[inline]
-pub const fn square_mask0x88(square: SquareIndex) -> Bitboard {
+pub const fn square_mask0x88(square: SquareIndex0x88) -> Bitboard {
     1 << index0x88to64(square)
 }
 
@@ -398,6 +486,9 @@ mod test {
         assert_eq!(0x102040810, ANTIDIAGONAL_MASK[4]);
         assert_eq!(0x1400000000, PAWN_ATTACK_SQUARES[WHITE as usize][27]);
         assert_eq!(0x2, PAWN_ATTACK_SQUARES[BLACK as usize][8]);
+        assert_eq!(0x2800, PAWN_ATTACK_SQUARES[WHITE as usize][4]);
+
+        assert_eq!(0x3828, KING_ATTACK_SQUARES[4]);
     }
 
     #[test]

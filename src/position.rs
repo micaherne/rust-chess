@@ -1,22 +1,37 @@
-use crate::position0x88::Colour;
+use crate::{
+    fen::{ConsumeFen, Fen},
+    position0x88::{make_moves::MakeMoves, Colour},
+    transposition::Hashable,
+};
+
+pub trait SquareIndex {
+    fn to_algebraic_notation(&self) -> String;
+}
+
+pub trait Piece {
+    fn to_algebraic_notation(&self) -> String;
+}
 
 /// Marker trait for positions.
-pub trait Position {}
+pub trait Position<S: SquareIndex, P: Piece>:
+    MakeMoves<S, P> + Hashable + Into<Fen> + ConsumeFen
+{
+}
 
 /// Enables pieces to be set and retrieved in the position.
 ///
-pub trait SetPosition<S, P>
+pub trait SetPosition<S: SquareIndex, P: Piece>
 where
-    Self: Position,
+    Self: Position<S, P>,
 {
     fn set_square_to_piece(&mut self, square: S, piece: P);
     fn remove_from_square(&mut self, square: S);
     fn square_piece(&self, square: S) -> P;
 }
 
-pub trait Evaluate<ScoreType>
+pub trait Evaluate<ScoreType, S: SquareIndex, P: Piece>
 where
-    Self: Position,
+    Self: Position<S, P>,
 {
     fn evaluate(&self) -> ScoreType;
 }

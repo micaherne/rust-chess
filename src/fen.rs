@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub const STARTPOS_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug)]
@@ -31,6 +33,18 @@ impl Fen {
     pub fn from_startpos() -> Self {
         let s: Fen = STARTPOS_FEN.try_into().unwrap();
         s.try_into().unwrap()
+    }
+}
+
+impl PartialEq for Fen {
+    fn eq(&self, other: &Self) -> bool {
+        self.string == other.string
+    }
+}
+
+impl Display for Fen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.string)
     }
 }
 

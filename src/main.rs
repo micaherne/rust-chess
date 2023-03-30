@@ -45,33 +45,3 @@ fn run_uci() {
 
     engine_handle.join().unwrap();
 }
-
-// fn run_uci_old() {
-//     let (input_sender, input_receiver) = mpsc::channel::<InputMessage>();
-//     let (output_sender, output_receiver) = mpsc::channel::<OutputMessage>();
-
-//     let mut engine = Engine::new(input_receiver, output_sender);
-//     let engine_handle = thread::spawn(move || {
-//         engine.listen();
-//     });
-
-//     let uci_input = UciInputListener {
-//         sender: input_sender
-//     };
-
-//     let uci_output = UciOutputListener {
-//         receiver: output_receiver
-//     };
-
-//     let h = thread::spawn(move || {
-//         uci_input.listen();
-//     });
-
-//     let output_handle = thread::spawn(move || {
-//         uci_output.listen();
-//     });
-
-//     engine_handle.join().unwrap();
-//     h.join().unwrap();
-//     output_handle.join().unwrap();
-// }

@@ -2,12 +2,16 @@ use std::fmt::Debug;
 
 use crate::{
     bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
-    position::{BoardSide, CastlingRights, MoveUndo, Position, SetPosition},
+    position::{BoardSide, CastlingRights, MoveUndo, Piece, Position, SetPosition, SquareIndex},
     position0x88::movegen_simple::is_valid_square,
-    transposition::{ZobristNumber, ZobristNumbers},
+    transposition::{Hashable, ZobristNumber, ZobristNumbers},
 };
 
-use self::{movegen_simple::PIECE_TYPES_COUNT, notation::piece_to_char};
+use self::{
+    movegen::{GenerateMoves, Move0x88},
+    movegen_simple::{generate_moves, PIECE_TYPES_COUNT},
+    notation::{piece_to_char, piece_type_to_char},
+};
 
 pub mod evaluate;
 pub mod iters;
@@ -23,9 +27,9 @@ pub type PieceType = u8;
 pub type Colour = u8;
 
 /// A piece with colour, e.g. a black knight.
-pub type Piece = u8;
+pub type PieceStandard = u8;
 
-pub type MoveUndo0x88 = MoveUndo<SquareIndex, PieceType>;
+pub type MoveUndo0x88 = MoveUndo<SquareIndex0x88, PieceType>;
 
 // Colours.
 pub const WHITE: Colour = 0;
@@ -44,16 +48,43 @@ pub const BISHOP: PieceType = 4;
 pub const QUEEN: PieceType = 5;
 pub const KING: PieceType = 6;
 
-pub type SquareIndex = usize;
+pub type SquareIndex0x88 = usize;
 pub type RankOrFileIndex = u8;
+
+impl SquareIndex for SquareIndex0x88 {
+    fn to_algebraic_notation(&self) -> String {
+        let mut result = String::new();
+        result.push((file(*self) + 97) as char);
+        result.push((rank(*self) + 0x31) as char);
+        result
+    }
+}
+
+impl Piece for PieceStandard {
+    fn to_algebraic_notation(&self) -> String {
+        let piece_type = *self & 0xF;
+        let result = piece_type_to_char(piece_type);
+        match result {
+            None => " ".into(),
+            Some(chr) => {
+                if *self & COLOUR_BIT_MASK == 0 {
+                    chr.to_ascii_uppercase().into()
+                } else {
+                    chr.to_ascii_lowercase().into()
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Position0x88 {
-    squares: [PieceType; 128],
-    king_squares: [SquareIndex; 2],
+    squares0x88: [PieceStandard; 128],
+    squares: [PieceStandard; 64],
+    king_squares: [SquareIndex0x88; 2],
     side_to_move: Colour,
     castling_rights: CastlingRights,
-    ep_square: SquareIndex,
+    ep_square: SquareIndex0x88,
     halfmove_clock: u32,
     fullmove_number: u32,
     zobrist_numbers: ZobristNumbers,
@@ -63,23 +94,25 @@ pub struct Position0x88 {
     pub bb_colours: [Bitboard; 3],
 }
 
-impl Position for Position0x88 {}
+impl Position<SquareIndex0x88, PieceStandard> for Position0x88 {}
 
-impl SetPosition<SquareIndex, Piece> for Position0x88 {
-    fn set_square_to_piece(&mut self, square: SquareIndex, piece: Piece) {
+impl SetPosition<SquareIndex0x88, PieceStandard> for Position0x88 {
+    fn set_square_to_piece(&mut self, square: SquareIndex0x88, piece: PieceStandard) {
         let new_piece_type = piece_type(piece);
         let new_piece_colour = piece_colour(piece).unwrap_or(NONE) as usize;
         let current_piece_type = piece_type(self.square_piece(square));
         let current_piece_colour = piece_colour(self.square_piece(square)).unwrap_or(NONE) as usize;
 
-        let square_index = index0x88to64(square);
+        let square_index = index0x88to64(square) as usize;
 
         self.hash_key ^= self.zobrist_numbers.piece_square[current_piece_colour]
-            [current_piece_type as usize][square_index as usize];
+            [current_piece_type as usize][square_index];
         self.hash_key ^= self.zobrist_numbers.piece_square[new_piece_colour]
-            [new_piece_type as usize][square_index as usize];
+            [new_piece_type as usize][square_index];
 
-        self.squares[square] = piece;
+        self.squares0x88[square] = piece;
+        self.squares[square_index] = piece;
+
         if new_piece_type == KING {
             self.king_squares[new_piece_colour] = square;
         }
@@ -91,19 +124,19 @@ impl SetPosition<SquareIndex, Piece> for Position0x88 {
         self.bb_colours[new_piece_colour] ^= mask;
     }
 
-    fn remove_from_square(&mut self, square: SquareIndex) {
+    fn remove_from_square(&mut self, square: SquareIndex0x88) {
         self.set_square_to_piece(square, EMPTY);
     }
 
     #[inline]
-    fn square_piece(&self, square: SquareIndex) -> Piece {
+    fn square_piece(&self, square: SquareIndex0x88) -> PieceStandard {
         debug_assert!(is_valid_square(square as i16));
-        self.squares[square]
+        self.squares0x88[square]
     }
 }
 
 impl Position0x88 {
-    pub fn set_ep_square(&mut self, square: SquareIndex) {
+    pub fn set_ep_square(&mut self, square: SquareIndex0x88) {
         if self.ep_square != 0 {
             self.hash_key ^= self.zobrist_numbers.ep_file[file(self.ep_square) as usize];
         }
@@ -158,8 +191,10 @@ impl Position0x88 {
             changed ^= 1 << bit;
         }
     }
+}
 
-    pub fn hash_key(&self) -> ZobristNumber {
+impl Hashable for Position0x88 {
+    fn hash_key(&self) -> ZobristNumber {
         self.hash_key
     }
 }
@@ -171,7 +206,7 @@ impl Debug for Position0x88 {
         s.push_str(&sep);
         for i in (0x00..0x80).step_by(0x10).rev() {
             s.push_str("|");
-            for sq in self.squares[i..i + 8].iter().map(|s| piece_to_char(*s)) {
+            for sq in self.squares0x88[i..i + 8].iter().map(|s| piece_to_char(*s)) {
                 s.push(sq.unwrap());
                 s.push_str("|");
             }
@@ -185,7 +220,8 @@ impl Debug for Position0x88 {
 impl Default for Position0x88 {
     fn default() -> Self {
         Position0x88 {
-            squares: [0; 128],
+            squares0x88: [0; 128],
+            squares: [0; 64],
             king_squares: [0; 2],
             side_to_move: WHITE,
             castling_rights: CastlingRights::new(),
@@ -200,44 +236,50 @@ impl Default for Position0x88 {
     }
 }
 
+impl GenerateMoves<SquareIndex0x88, PieceStandard> for Position0x88 {
+    fn generate_moves(&self) -> Vec<Move0x88> {
+        generate_moves(self)
+    }
+}
+
 #[inline]
-pub const fn file(square: SquareIndex) -> RankOrFileIndex {
+pub const fn file(square: SquareIndex0x88) -> RankOrFileIndex {
     square as u8 & 7
 }
 
 #[inline]
-pub const fn rank(square: SquareIndex) -> RankOrFileIndex {
+pub const fn rank(square: SquareIndex0x88) -> RankOrFileIndex {
     square as u8 >> 4
 }
 
 #[inline]
-fn diagonal(square: SquareIndex) -> RankOrFileIndex {
+fn diagonal(square: SquareIndex0x88) -> RankOrFileIndex {
     7 + rank(square) - file(square)
 }
 
 #[inline]
-fn antidiagonal(square: SquareIndex) -> RankOrFileIndex {
+fn antidiagonal(square: SquareIndex0x88) -> RankOrFileIndex {
     rank(square) + file(square)
 }
 
 #[inline]
-fn square_index(rank: RankOrFileIndex, file: RankOrFileIndex) -> SquareIndex {
+fn square_index(rank: RankOrFileIndex, file: RankOrFileIndex) -> SquareIndex0x88 {
     debug_assert!(rank < 8);
     debug_assert!(file < 8);
     ((rank as usize) << 4) | file as usize
 }
 
 #[inline]
-pub fn get_piece(piece_type: PieceType, colour: Colour) -> Piece {
+pub fn get_piece(piece_type: PieceType, colour: Colour) -> PieceStandard {
     piece_type | (colour << COLOUR_BIT)
 }
 
 #[inline]
-pub fn piece_type(piece: Piece) -> PieceType {
+pub fn piece_type(piece: PieceStandard) -> PieceType {
     piece & 0xF
 }
 
-pub fn piece_colour(piece: Piece) -> Option<Colour> {
+pub fn piece_colour(piece: PieceStandard) -> Option<Colour> {
     if piece == EMPTY {
         None
     } else if (piece & COLOUR_BIT_MASK) != 0 {
@@ -253,23 +295,23 @@ pub fn opposite_colour(colour: Colour) -> Colour {
 }
 
 #[inline]
-pub const fn index0x88to64(square: SquareIndex) -> SquareIndex64 {
+pub const fn index0x88to64(square: SquareIndex0x88) -> SquareIndex64 {
     debug_assert!(is_valid_square(square as i16));
     rank(square) * 8 + file(square)
 }
 
 #[inline]
-pub const fn index64to0x88(square: SquareIndex64) -> SquareIndex {
-    (bitboards::rank(square) * 16 + bitboards::file(square)) as SquareIndex
+pub const fn index64to0x88(square: SquareIndex64) -> SquareIndex0x88 {
+    (bitboards::rank(square) * 16 + bitboards::file(square)) as SquareIndex0x88
 }
 
 #[derive(Default)]
 pub struct SquareIterator {
-    current: SquareIndex,
+    current: SquareIndex0x88,
 }
 
 impl Iterator for SquareIterator {
-    type Item = SquareIndex;
+    type Item = SquareIndex0x88;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current & 0x88 != 0 {
@@ -284,7 +326,7 @@ impl Iterator for SquareIterator {
     }
 }
 
-pub fn square_iter() -> impl Iterator<Item = SquareIndex> {
+pub fn square_iter() -> impl Iterator<Item = SquareIndex0x88> {
     SquareIterator::default()
 }
 

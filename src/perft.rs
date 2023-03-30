@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     io::{BufRead, BufReader, Write},
+    marker::PhantomData,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     time::Instant,
     u8,
@@ -8,92 +9,151 @@ use std::{
 
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position0x88::{
-    make_moves::MakeMoves,
-    movegen::GenerateMoves,
-    notation::{set_from_fen, to_fen},
-    Position0x88,
+use crate::{
+    fen::{Fen, FenError},
+    position::{Piece, Position, SquareIndex},
+    position0x88::{
+        movegen::{GenerateMoves, Move},
+        notation::set_from_fen,
+        Position0x88,
+    },
 };
 
-#[cfg(debug_assertions)]
-use crate::position0x88::notation::square_index_to_str;
-
-pub fn perft(position: &mut Position0x88, depth: u16) -> usize {
-    if depth == 0 {
-        return 1;
-    }
-
-    // println!("Depth: {}", depth);
-
-    assert!(depth > 0);
-
-    let moves = position.generate_moves();
-    let mut nodes = 0;
-
-    if depth == 1 {
-        return moves.len();
-    }
-
-    for m in moves {
-        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
-        nodes += perft(position, depth - 1);
-        position.undo_move(undo);
-    }
-
-    nodes
+pub struct Perft<T: Position<S, P>, S: SquareIndex, P: Piece> {
+    position: T,
+    s: PhantomData<S>,
+    p: PhantomData<P>,
 }
 
-pub fn divide(position: &mut Position0x88, depth: u16) -> DivideResults {
-    let mut result = DivideResults::default();
-
-    let moves = position.generate_moves();
-
-    let mut total = 0;
-
-    for m in moves {
-        #[cfg(debug_assertions)]
-        let before_fen = to_fen(position);
-
-        #[cfg(debug_assertions)]
-        let before_hash = position.hash_key();
-
-        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
-        let nodes = perft(position, depth - 1);
-        total += nodes;
-        position.undo_move(undo);
-
-        #[cfg(debug_assertions)]
-        {
-            let after_fen = to_fen(position);
-
-            if before_fen != after_fen {
-                panic!(
-                    "Move: {}{}, before: {}, after: {}",
-                    square_index_to_str(m.from_index),
-                    square_index_to_str(m.to_index),
-                    before_fen,
-                    after_fen
-                );
-            }
-
-            let after_hash = position.hash_key();
-            if before_hash != after_hash {
-                panic!(
-                    "Move: {}{}, before: {}, after: {}",
-                    square_index_to_str(m.from_index),
-                    square_index_to_str(m.to_index),
-                    before_hash,
-                    after_hash
-                );
-            }
+impl<T: Position<S, P> + GenerateMoves<S, P>, S: SquareIndex + Clone, P: Piece + Clone>
+    Perft<T, S, P>
+{
+    pub fn new(position: T) -> Self {
+        Self {
+            position,
+            s: PhantomData,
+            p: PhantomData,
         }
-
-        result.move_counts.insert(m.to_string(), nodes);
     }
 
-    result.total = total;
+    pub fn perft(&mut self, depth: u16) -> Result<usize, FenError> {
+        if depth == 0 {
+            return Ok(1);
+        }
 
-    result
+        assert!(depth > 0);
+
+        let moves: Vec<Move<S, P>> = self.position.generate_moves();
+        let mut nodes = 0;
+
+        if depth == 1 {
+            return Ok(moves.len());
+        }
+
+        for m in moves {
+            let undo = self
+                .position
+                .make_move(m.from_index, m.to_index, m.queening_piece);
+            nodes += self.perft(depth - 1)?;
+            self.position.undo_move(undo);
+        }
+
+        Ok(nodes)
+    }
+
+    pub fn divide(&mut self, depth: u16) -> DivideResults {
+        let mut result = DivideResults::default();
+
+        let moves = self.position.generate_moves();
+
+        let mut total = 0;
+
+        for m in moves {
+            let mv: LongAlgebraicNotationMove = (m.clone()).into();
+
+            let undo = self
+                .position
+                .make_move(m.from_index, m.to_index, m.queening_piece);
+
+            let nodes = self.perft(depth - 1).unwrap();
+            total += nodes;
+            self.position.undo_move(undo);
+
+            result.move_counts.insert(mv.text, nodes);
+        }
+
+        result.total = total;
+
+        result
+    }
+
+    pub fn perft_compare<E: EngineConnector>(
+        &mut self,
+        fen: &str,
+        start_depth: u8,
+        connector: &mut E,
+    ) -> Result<(), FenError> {
+        let mut moves: Vec<String> = vec![];
+
+        for depth in (1..start_depth).rev() {
+            let diff_res = self.get_diff(connector, fen, depth, &mut moves);
+            let mut biggest_diff_move: String = "".to_string();
+            let max_diff = 0;
+
+            let diff = diff_res.unwrap();
+
+            for (mv, counts) in diff.different_counts {
+                if counts.1.abs_diff(counts.0) > max_diff {
+                    biggest_diff_move = mv;
+                }
+            }
+
+            if diff.missing_moves.len() > 0 {
+                println!("Missing moves: {}", diff.missing_moves.join(", "));
+            }
+
+            if biggest_diff_move.len() == 0 {
+                println!("No different counts at depth {}", depth);
+                return Ok(());
+            }
+
+            println!("Depth: {}, Move: {}", depth, biggest_diff_move);
+
+            moves.push(biggest_diff_move);
+        }
+        Ok(())
+    }
+
+    fn get_diff<E: EngineConnector>(
+        &mut self,
+        engine: &mut E,
+        fen: &str,
+        depth: u8,
+        moves: &Vec<String>,
+    ) -> Result<DivideDiff, FenError> {
+        // Get perft at a certain depth.
+        let their_perft = engine.get_perft(fen, moves, depth);
+        let fen_obj: Fen = fen.try_into()?;
+        self.position.set_from_fen(fen_obj)?;
+
+        let l: Vec<LongAlgebraicNotationMove> = moves
+            .iter()
+            .map(|m| LongAlgebraicNotationMove {
+                text: m.to_string(),
+            })
+            .collect();
+
+        self.position.make_moves(&l);
+
+        /* let f: Fen = self.position.try_into()?;
+        println!("{}", f); */
+
+        let our_perft = self.divide(depth as u16);
+
+        let diff = diff_divides(&our_perft, &their_perft);
+
+        Ok(diff)
+    }
 }
 
 pub fn run_perft(args: VecDeque<String>) {
@@ -119,7 +179,7 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
     }
 
     let arg1 = args.pop_front().unwrap();
-    let fen: &str = arg1.as_str();
+    let fen: Fen = arg1.as_str().try_into().unwrap();
 
     let arg2 = args.pop_front().unwrap();
     let parse_result = arg2.parse::<u8>();
@@ -129,6 +189,15 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
     }
 
     let start_depth: u8 = parse_result.unwrap();
+
+    let pos: Position0x88 = Default::default();
+    let mut perft = Perft::new(pos);
+
+    perft
+        .perft_compare(&fen.string, start_depth, &mut stockfish)
+        .unwrap();
+
+    /*
 
     let mut moves: Vec<String> = vec![];
 
@@ -155,47 +224,17 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
         println!("Depth: {}, Move: {}", depth, biggest_diff_move);
 
         moves.push(biggest_diff_move);
-    }
+    } */
 
     stockfish.quit();
 
     // println!("Moves: {:#?}", moves);
 }
 
-fn get_diff(
-    stockfish: &mut StockfishConnector,
-    fen: &str,
-    depth: u8,
-    moves: &Vec<String>,
-) -> DivideDiff {
-    // Get perft at a certain depth.
-    let their_perft = stockfish.get_perft(fen, moves, depth);
-    let mut pos = Position0x88::default();
-    set_from_fen(&mut pos, fen).unwrap();
-
-    let l: Vec<LongAlgebraicNotationMove> = moves
-        .iter()
-        .map(|m| LongAlgebraicNotationMove {
-            text: m.to_string(),
-        })
-        .collect();
-
-    pos.make_moves(&l);
-
-    let f = to_fen(&pos);
-    println!("{}", f);
-
-    let our_perft = divide(&mut pos, depth as u16);
-
-    let diff = diff_divides(&our_perft, &their_perft);
-
-    diff
-}
-
 #[derive(Default, Debug)]
 pub struct DivideResults {
-    move_counts: HashMap<String, usize>,
-    total: usize,
+    pub move_counts: HashMap<String, usize>,
+    pub total: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -210,7 +249,13 @@ struct StockfishConnector {
     stdout: ChildStdout,
 }
 
-impl StockfishConnector {
+pub trait EngineConnector {
+    fn new(path: &str) -> Self;
+    fn quit(&mut self);
+    fn get_perft(&mut self, fen: &str, moves: &Vec<String>, depth: u8) -> DivideResults;
+}
+
+impl EngineConnector for StockfishConnector {
     fn new(path: &str) -> Self {
         let mut command = Command::new(path);
         let mut child = command
@@ -312,23 +357,18 @@ pub fn run_divide(args: VecDeque<String>) {
         return;
     }
 
+    let mut perft = Perft::new(position);
+
     let start_time = Instant::now();
+    let divide = perft.divide(depth_int);
 
-    let moves = position.generate_moves();
-
-    let mut total = 0;
-
-    for m in moves {
-        let undo = position.make_move(m.from_index, m.to_index, m.queening_piece);
-        let nodes = perft(&mut position, depth_int - 1);
-        total += nodes;
-        position.undo_move(undo);
-        println!("{} {}", m.to_string(), nodes);
+    for (mv, count) in divide.move_counts {
+        println!("{}: {}", mv, count);
     }
 
     println!(
         "Total nodes: {} in {} seconds.",
-        total,
+        divide.total,
         start_time.elapsed().as_secs()
     );
 }

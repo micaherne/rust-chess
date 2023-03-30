@@ -4,15 +4,19 @@ use rand::RngCore;
 
 use crate::{
     position0x88::{
-        evaluate::Score, movegen::Move, movegen_simple::PIECE_TYPES_COUNT, BLACK, NONE, WHITE,
+        evaluate::Score, movegen::Move0x88, movegen_simple::PIECE_TYPES_COUNT, BLACK, NONE, WHITE,
     },
     search::Depth,
 };
 
+pub trait Hashable {
+    fn hash_key(&self) -> ZobristNumber;
+}
+
 #[derive(Debug, Clone)]
 pub struct TranspositionItem {
     pub key: ZobristNumber,
-    pub best_move: Option<Move>,
+    pub best_move: Option<Move0x88>,
     pub depth: Depth,
     pub score: Score,
     pub node_type: NodeType,

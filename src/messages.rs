@@ -1,6 +1,6 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position0x88::{evaluate::Score, movegen::Move};
+use crate::position0x88::{evaluate::Score, movegen::Move0x88};
 
 pub enum InputMessage {
     Quit,
@@ -31,7 +31,7 @@ pub enum InfoMessage {
     PrincipalVariation(Vec<LongAlgebraicNotationMove>),
     // What is multipv?
     Score(Vec<ScoreInfo>),
-    CurrentMove(Move),
+    CurrentMove(Move0x88),
     CurrentMoveNumber(usize),
     HashFull(usize), // What is this?
     NodesPerSecond(usize),
@@ -39,8 +39,8 @@ pub enum InfoMessage {
     // Do we need sbhits - Shredder database?
     CpuLoad(usize),
     String(String),
-    Refutation(Move, Vec<Move>),
-    CurrentLine(usize, Vec<Move>),
+    Refutation(Move0x88, Vec<Move0x88>),
+    CurrentLine(usize, Vec<Move0x88>),
 }
 
 pub enum ScoreInfo {

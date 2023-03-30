@@ -1,7 +1,7 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
-    position::{BoardSide, MoveUndo, SetPosition},
+    position::{BoardSide, MoveUndo, Piece, SetPosition, SquareIndex},
     position0x88::{
         file, get_piece,
         notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
@@ -12,21 +12,21 @@ use crate::{
 
 use super::{
     notation::{char_to_piece_type, str_to_square_index},
-    MoveUndo0x88, PieceType, Position0x88, SquareIndex,
+    MoveUndo0x88, PieceStandard, PieceType, Position0x88, SquareIndex0x88,
 };
 
 pub trait ExtractMove {
-    fn from_square(&self) -> SquareIndex;
-    fn to_square(&self) -> SquareIndex;
+    fn from_square(&self) -> SquareIndex0x88;
+    fn to_square(&self) -> SquareIndex0x88;
     fn queening_piece(&self) -> Option<PieceType>;
 }
 
 impl ExtractMove for LongAlgebraicNotationMove {
-    fn from_square(&self) -> SquareIndex {
+    fn from_square(&self) -> SquareIndex0x88 {
         str_to_square_index(&self.text[0..=1]).unwrap()
     }
 
-    fn to_square(&self) -> SquareIndex {
+    fn to_square(&self) -> SquareIndex0x88 {
         str_to_square_index(&self.text[2..=3]).unwrap()
     }
 
@@ -40,7 +40,7 @@ impl ExtractMove for LongAlgebraicNotationMove {
     }
 }
 
-pub trait MakeMoves<S, P> {
+pub trait MakeMoves<S: SquareIndex, P: Piece> {
     fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo<S, P>>;
     fn make_move(
         &mut self,
@@ -51,7 +51,7 @@ pub trait MakeMoves<S, P> {
     fn undo_move(&mut self, undo: MoveUndo<S, P>);
 }
 
-impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
+impl MakeMoves<SquareIndex0x88, PieceStandard> for Position0x88 {
     fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo0x88> {
         let mut result: Vec<MoveUndo0x88> = vec![];
         for mv in moves {
@@ -65,11 +65,11 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
     }
     fn make_move(
         &mut self,
-        from_index: SquareIndex,
-        to_index: SquareIndex,
+        from_index: SquareIndex0x88,
+        to_index: SquareIndex0x88,
         queening_piece: Option<PieceType>,
     ) -> MoveUndo0x88 {
-        let moved_piece = self.squares[from_index];
+        let moved_piece = self.squares0x88[from_index];
         debug_assert!(moved_piece != EMPTY);
 
         let dbg_fen = to_fen(self);
@@ -88,7 +88,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
             };
         }
 
-        let captured_piece = self.squares[capture_square];
+        let captured_piece = self.squares0x88[capture_square];
         let undo = MoveUndo {
             from_index,
             to_index,
@@ -102,10 +102,10 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
         let ep_square = self.ep_square;
         self.set_ep_square(0);
 
-        let moved_piece_colour = piece_colour(self.squares[from_index]).unwrap();
+        let moved_piece_colour = piece_colour(self.squares0x88[from_index]).unwrap();
 
         let new_piece = match queening_piece {
-            None => self.squares[from_index],
+            None => self.squares0x88[from_index],
             Some(piece_type) => get_piece(piece_type, moved_piece_colour),
         };
 
@@ -131,7 +131,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
                 } else {
                     to_index + 16
                 };
-                let captured_pawn = self.squares[captured_pawn_square];
+                let captured_pawn = self.squares0x88[captured_pawn_square];
                 match piece_colour(captured_pawn) {
                     None => panic!("Not a piece"),
                     Some(colour) => {
@@ -146,18 +146,18 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
                 }
             }
         } else if moved_piece_type == KING {
-            if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex] {
+            if from_index == KING_HOME_SQUARES[moved_piece_colour as SquareIndex0x88] {
                 self.castling_remove(moved_piece_colour, None);
             }
 
             // Castling.
             if from_index.abs_diff(to_index) == 2 {
                 let rook_square = if from_index < to_index {
-                    H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
+                    H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex0x88]
                 } else {
-                    A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex]
+                    A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex0x88]
                 };
-                let rook = self.squares[rook_square];
+                let rook = self.squares0x88[rook_square];
                 if piece_colour(rook).unwrap() != moved_piece_colour {
                     panic!(
                         "Wrong piece colour: {:x} FEN: {}",
@@ -176,11 +176,11 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
                 self.castling_remove(moved_piece_colour, None);
             }
 
-            self.king_squares[moved_piece_colour as SquareIndex] = to_index;
+            self.king_squares[moved_piece_colour as SquareIndex0x88] = to_index;
         } else if moved_piece_type == ROOK {
-            if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
+            if from_index == A_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex0x88] {
                 self.castling_remove(moved_piece_colour, Some(BoardSide::Queenside));
-            } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex] {
+            } else if from_index == H_ROOK_HOME_SQUARES[moved_piece_colour as SquareIndex0x88] {
                 self.castling_remove(moved_piece_colour, Some(BoardSide::Kingside));
             }
         }
@@ -221,7 +221,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
     fn undo_move(&mut self, undo: MoveUndo0x88) {
         // En passent.
         let is_enpassent =
-            undo.to_index == undo.ep_square && piece_type(self.squares[undo.to_index]) == PAWN;
+            undo.to_index == undo.ep_square && piece_type(self.squares0x88[undo.to_index]) == PAWN;
         let mut capture_square = undo.to_index;
         if is_enpassent {
             capture_square = match undo.from_index < undo.to_index {
@@ -230,7 +230,7 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
             };
         }
 
-        let is_king_move = piece_type(self.squares[undo.to_index]) == KING;
+        let is_king_move = piece_type(self.squares0x88[undo.to_index]) == KING;
 
         let side_moved = opposite_colour(self.side_to_move);
 
@@ -238,14 +238,14 @@ impl MakeMoves<SquareIndex, PieceType> for Position0x88 {
         if is_king_move && undo.to_index.abs_diff(undo.from_index) == 2 {
             let rook_index = (undo.to_index + undo.from_index) / 2;
 
-            debug_assert!(piece_type(self.squares[rook_index]) == ROOK);
+            debug_assert!(piece_type(self.squares0x88[rook_index]) == ROOK);
 
             let rook_from_index = match undo.to_index < undo.from_index {
                 true => A_ROOK_HOME_SQUARES[side_moved as usize],
                 false => H_ROOK_HOME_SQUARES[side_moved as usize],
             };
 
-            self.set_square_to_piece(rook_from_index, self.squares[rook_index]);
+            self.set_square_to_piece(rook_from_index, self.squares0x88[rook_index]);
             self.remove_from_square(rook_index);
         }
 

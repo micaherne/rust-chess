@@ -1,20 +1,20 @@
 use crate::{
     fen::{ConsumeFen, Fen, FenError, STARTPOS_FEN},
-    position::SetPosition,
+    position::{SetPosition, SquareIndex},
 };
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
-    movegen_simple::is_valid_square, square_index, BoardSide, CastlingRights, Colour, Piece,
-    PieceType, Position0x88, SquareIndex, BISHOP, BLACK, COLOUR_BIT_MASK, EMPTY, KING, KNIGHT,
-    PAWN, QUEEN, ROOK, WHITE,
+    movegen_simple::is_valid_square, square_index, BoardSide, CastlingRights, Colour,
+    PieceStandard, PieceType, Position0x88, SquareIndex0x88, BISHOP, BLACK, COLOUR_BIT_MASK, EMPTY,
+    KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
 use regex::Regex;
 
-pub const H_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x07, 0x77];
-pub const A_ROOK_HOME_SQUARES: [SquareIndex; 2] = [0x00, 0x70];
-pub const KING_HOME_SQUARES: [SquareIndex; 2] = [0x04, 0x74];
+pub const H_ROOK_HOME_SQUARES: [SquareIndex0x88; 2] = [0x07, 0x77];
+pub const A_ROOK_HOME_SQUARES: [SquareIndex0x88; 2] = [0x00, 0x70];
+pub const KING_HOME_SQUARES: [SquareIndex0x88; 2] = [0x04, 0x74];
 
 impl From<&str> for Position0x88 {
     fn from(value: &str) -> Self {
@@ -86,6 +86,13 @@ impl ConsumeFen for Position0x88 {
     }
 }
 
+impl Into<Fen> for Position0x88 {
+    fn into(self) -> Fen {
+        let string = to_fen(&self);
+        string.as_str().try_into().unwrap()
+    }
+}
+
 pub fn to_fen(position: &Position0x88) -> String {
     let mut result = String::new();
     for line_start in (0..8).rev() {
@@ -95,7 +102,7 @@ pub fn to_fen(position: &Position0x88) -> String {
 
             debug_assert!(is_valid_square(square_index as i16));
 
-            let piece = position.squares[square_index];
+            let piece = position.squares0x88[square_index];
             if piece == EMPTY {
                 empty_square_count += 1;
             } else {
@@ -118,7 +125,7 @@ pub fn to_fen(position: &Position0x88) -> String {
     result.push(colour_to_char(position.side_to_move).unwrap_or_else(|| '-'));
     result.push(' ');
     result.push_str(castling_rights_to_string(&position.castling_rights).as_str());
-    let mut ep_string = square_index_to_str(position.ep_square);
+    let mut ep_string = position.ep_square.to_algebraic_notation();
     if ep_string == "a1" {
         ep_string = "-".to_string();
     }
@@ -132,7 +139,6 @@ pub fn to_fen(position: &Position0x88) -> String {
     result
 }
 
-#[deprecated]
 pub fn set_from_fen(position: &mut Position0x88, fen: &str) -> Result<(), FenError> {
     position.set_from_fen(fen.try_into()?)
 }
@@ -231,7 +237,7 @@ pub fn colour_to_char(colour: Colour) -> Option<char> {
     }
 }
 
-pub fn str_to_square_index(s: &str) -> Option<SquareIndex> {
+pub fn str_to_square_index(s: &str) -> Option<SquareIndex0x88> {
     let lower = s.to_ascii_lowercase();
     let bytes = lower.as_bytes();
     let file = bytes[0];
@@ -245,7 +251,8 @@ pub fn str_to_square_index(s: &str) -> Option<SquareIndex> {
     }
 }
 
-pub fn square_index_to_str(index: SquareIndex) -> String {
+#[deprecated(since = "0.1.0", note = "Please use to_algebraic_notation() instead")]
+pub fn square_index_to_str(index: SquareIndex0x88) -> String {
     let mut result = String::new();
     result.push((super::file(index) + 97) as char);
     result.push((super::rank(index) + 0x31) as char);
@@ -257,7 +264,7 @@ pub fn square_index_to_str(index: SquareIndex) -> String {
 /// e.g. char_to_piece('n') = black knight
 ///      char_to_piece('N') = white knight
 ///
-fn char_to_piece(c: char) -> Option<Piece> {
+fn char_to_piece(c: char) -> Option<PieceStandard> {
     let piece_type = char_to_piece_type(c);
 
     match piece_type {
@@ -274,7 +281,7 @@ fn char_to_piece(c: char) -> Option<Piece> {
     }
 }
 
-pub fn piece_to_char(p: Piece) -> Option<char> {
+pub fn piece_to_char(p: PieceStandard) -> Option<char> {
     let piece_type = p & 0xF;
     let result = piece_type_to_char(piece_type);
     match result {
@@ -339,7 +346,7 @@ mod test {
         let mut position = Position0x88::default();
         set_piece_placements(&mut position, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR")
             .expect("Failed");
-        assert_eq!(ROOK, position.squares[0x00]);
+        assert_eq!(ROOK, position.squares0x88[0x00]);
         assert_eq!(0x74, position.king_squares[BLACK as usize]);
         assert_eq!(0x04, position.king_squares[WHITE as usize]);
     }
@@ -348,7 +355,7 @@ mod test {
     fn test_set_from_fen() {
         let mut position = Position0x88::default();
         set_from_fen(&mut position, STARTPOS_FEN).expect("Failed");
-        assert_eq!(ROOK, position.squares[0x00]);
+        assert_eq!(ROOK, position.squares0x88[0x00]);
         assert_eq!(0x74, position.king_squares[BLACK as usize]);
         assert_eq!(0x04, position.king_squares[WHITE as usize]);
         assert!(position.castling_rights.allowed(WHITE, BoardSide::Kingside));

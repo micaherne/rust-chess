@@ -6,15 +6,15 @@ use crate::{
 use super::{
     file,
     movegen_simple::{can_evade_check, side_to_move_in_check},
-    piece_type, rank, square_iter, SquareIndex, BISHOP, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK,
-    WHITE,
+    piece_type, rank, square_iter, PieceStandard, SquareIndex0x88, BISHOP, EMPTY, KING, KNIGHT,
+    PAWN, QUEEN, ROOK, WHITE,
 };
 
 pub type Score = i32;
 
 pub type PieceSquareTable = [Score; 64];
 
-impl Evaluate<Score> for Position0x88 {
+impl Evaluate<Score, SquareIndex0x88, PieceStandard> for Position0x88 {
     fn evaluate(&self) -> Score {
         evaluate(&self)
     }
@@ -80,19 +80,19 @@ const KING_PIECE_SQUARE_TABLE: [PieceSquareTable; 2] = [
     ],
 ];
 
-fn piece_square_index(index0x88: SquareIndex) -> SquareIndex {
-    ((7 - rank(index0x88)) * 8 + file(index0x88)) as SquareIndex
+fn piece_square_index(index0x88: SquareIndex0x88) -> SquareIndex0x88 {
+    ((7 - rank(index0x88)) * 8 + file(index0x88)) as SquareIndex0x88
 }
 
 /// The piece square table index reversed, for non-symmetrical tables.
-fn piece_square_index_rev(index0x88: SquareIndex) -> SquareIndex {
-    (rank(index0x88) * 8 + file(index0x88)) as SquareIndex
+fn piece_square_index_rev(index0x88: SquareIndex0x88) -> SquareIndex0x88 {
+    (rank(index0x88) * 8 + file(index0x88)) as SquareIndex0x88
 }
 
 fn game_phase(position: &Position0x88) -> i32 {
     let mut phase = TOTAL_PHASE;
     for sq in square_iter() {
-        let piece_type = piece_type(position.squares[sq]);
+        let piece_type = piece_type(position.squares0x88[sq]);
         phase -= PHASE[piece_type as usize];
     }
     (phase * 256 + (TOTAL_PHASE / 2)) / TOTAL_PHASE
@@ -115,7 +115,7 @@ pub fn evaluate(position: &Position0x88) -> Score {
 
     // Evaluate material.
     for piece_square in square_iter() {
-        let piece = position.squares[piece_square];
+        let piece = position.squares0x88[piece_square];
         let piece_type = piece_type(piece);
         if piece_type == EMPTY {
             continue;

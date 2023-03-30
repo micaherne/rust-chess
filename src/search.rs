@@ -13,11 +13,11 @@ use crate::{
     position0x88::{
         evaluate::{Score, CHECKMATE_SCORE_MAX},
         make_moves::MakeMoves,
-        movegen::{GenerateMoves, Move},
+        movegen::{GenerateMoves, Move0x88},
         movegen_simple::side_to_move_in_check,
         Position0x88, WHITE,
     },
-    transposition::{NodeType, TranspositionItem, TranspositionTable},
+    transposition::{Hashable, NodeType, TranspositionItem, TranspositionTable},
 };
 
 #[cfg(debug_assertions)]
@@ -25,7 +25,7 @@ use crate::position0x88::notation::to_fen;
 
 pub type Depth = i16;
 
-type Line = Vec<Move>;
+type Line = Vec<Move0x88>;
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1_000_000;
 
@@ -141,7 +141,7 @@ impl SearchTree {
     // TODO: This doesn't deal with sending the ponder move back to the engine - it would go direct to
     // the uci thread if we sent it here.
     pub fn search(&mut self) -> LongAlgebraicNotationMove {
-        let mut pline: Line = vec![Move::default(); self.search_depth as usize];
+        let mut pline: Line = vec![Move0x88::default(); self.search_depth as usize];
 
         self.nodes_searched = 0;
 

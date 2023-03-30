@@ -1,17 +1,17 @@
 use crate::position::SetPosition;
 
 use super::{
-    movegen_simple::SquareAndPiece, piece_colour, piece_type, Colour, Piece, PieceType,
-    Position0x88, SquareIndex, BISHOP, BLACK, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
+    movegen_simple::SquareAndPiece, piece_colour, piece_type, Colour, PieceStandard, PieceType,
+    Position0x88, SquareIndex0x88, BISHOP, BLACK, EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
 #[derive(Default, Debug)]
 pub struct SquareIterator {
-    next: SquareIndex,
+    next: SquareIndex0x88,
 }
 
 impl Iterator for SquareIterator {
-    type Item = SquareIndex;
+    type Item = SquareIndex0x88;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next > 0x77 {
@@ -27,7 +27,7 @@ impl Iterator for SquareIterator {
     }
 }
 
-pub fn square_iterator() -> impl Iterator<Item = SquareIndex> {
+pub fn square_iterator() -> impl Iterator<Item = SquareIndex0x88> {
     SquareIterator::default()
 }
 
@@ -47,7 +47,7 @@ trait CheckColour {
     fn is_colour(&self, colour: Colour) -> bool;
 }
 
-impl CheckColour for Piece {
+impl CheckColour for PieceStandard {
     fn is_colour(&self, colour: Colour) -> bool {
         piece_colour(*self) == Some(colour)
     }
@@ -84,7 +84,7 @@ trait CheckPieceType {
     }
 }
 
-impl CheckPieceType for Piece {
+impl CheckPieceType for PieceStandard {
     fn is_piece_type(&self, check_type: PieceType) -> bool {
         piece_type(*self) == check_type
     }
@@ -107,7 +107,7 @@ mod test {
 
     #[test]
     fn test_square_iterator() {
-        let squares: Vec<SquareIndex> = square_iterator().collect();
+        let squares: Vec<SquareIndex0x88> = square_iterator().collect();
         assert_eq!(64, squares.len());
         assert_eq!(0, squares[0]);
         assert_eq!(16, squares[8]);
