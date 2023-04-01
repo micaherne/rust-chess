@@ -121,7 +121,7 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
-    use crate::position0x88::{make_moves::MakeMoves, Position0x88};
+    use crate::{position::MakeMoves, position0x88::Position0x88};
 
     use super::*;
 

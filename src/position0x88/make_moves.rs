@@ -1,7 +1,7 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
-    position::{BoardSide, MoveUndo, Piece, SetPosition, SquareIndex},
+    position::{BoardSide, MakeMoves, MoveUndo, Piece, SetPosition, SquareIndex},
     position0x88::{
         file, get_piece,
         notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
@@ -38,17 +38,6 @@ impl ExtractMove for LongAlgebraicNotationMove {
             Some(i) => char_to_piece_type(*i),
         }
     }
-}
-
-pub trait MakeMoves<S: SquareIndex, P: Piece> {
-    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo<S, P>>;
-    fn make_move(
-        &mut self,
-        from_index: S,
-        to_index: S,
-        queening_piece: Option<P>,
-    ) -> MoveUndo<S, P>;
-    fn undo_move(&mut self, undo: MoveUndo<S, P>);
 }
 
 impl MakeMoves<SquareIndex0x88, PieceStandard> for Position0x88 {

@@ -1,6 +1,8 @@
+use chess_uci::messages::LongAlgebraicNotationMove;
+
 use crate::{
     fen::{ConsumeFen, Fen, FenError},
-    position0x88::{make_moves::MakeMoves, Colour},
+    position0x88::Colour,
     transposition::Hashable,
 };
 
@@ -27,6 +29,17 @@ pub trait Piece {
     fn from_algebraic_notation(algebraic_notation: char) -> Result<Self, FenError>
     where
         Self: Sized;
+}
+
+pub trait MakeMoves<S: SquareIndex, P: Piece> {
+    fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo<S, P>>;
+    fn make_move(
+        &mut self,
+        from_index: S,
+        to_index: S,
+        queening_piece: Option<P>,
+    ) -> MoveUndo<S, P>;
+    fn undo_move(&mut self, undo: MoveUndo<S, P>);
 }
 
 /// Marker trait for positions.

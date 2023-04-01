@@ -6,8 +6,8 @@ use std::{
 use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
 
 use crate::{
+    position::MakeMoves,
     position0x88::{
-        make_moves::MakeMoves,
         notation::{set_from_fen, set_startpos},
         MoveUndo0x88, Position0x88,
     },

@@ -405,7 +405,8 @@ mod test {
 
     use crate::{
         fen::STARTPOS_FEN,
-        position0x88::{index64to0x88, make_moves::MakeMoves, QUEEN, ROOK},
+        position::MakeMoves,
+        position0x88::{index64to0x88, QUEEN, ROOK},
     };
 
     use super::*;
