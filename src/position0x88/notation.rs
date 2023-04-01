@@ -30,15 +30,15 @@ impl ConsumeFen for Position0x88 {
             return Err(e);
         }
 
-        match char_to_colour(fen.side_to_move.chars().next().unwrap()) {
-            None => return Err(FenError::InvalidColourToMove),
+        match char_to_colour(fen.side_to_move) {
+            None => return Err(FenError::InvalidColourToMove(fen.side_to_move.to_string())),
             Some(side) => self.side_to_move = side,
         }
 
         let re = Regex::new("^([KQkq]+|-)$").unwrap();
         let castling_chars = &fen.castling;
         if !re.is_match(castling_chars) {
-            return Err(FenError::InvalidCastlingInfo);
+            return Err(FenError::InvalidCastlingInfo(castling_chars.to_string()));
         }
 
         self.castling_rights = CastlingRights::new();
@@ -52,7 +52,7 @@ impl ConsumeFen for Position0x88 {
                 let side = match c.to_ascii_lowercase() {
                     'k' => BoardSide::Kingside,
                     'q' => BoardSide::Queenside,
-                    _ => return Err(FenError::InvalidCastlingInfo),
+                    _ => return Err(FenError::InvalidCastlingInfo(castling_chars.to_string())),
                 };
                 self.castling_allow(colour, Some(side));
             }
@@ -65,7 +65,7 @@ impl ConsumeFen for Position0x88 {
                 let ep = str_to_square_index(x);
                 match ep {
                     Some(sq) => sq,
-                    None => return Err(FenError::InvalidSquare),
+                    None => return Err(FenError::InvalidSquare(x.to_string())),
                 }
             }
         };
@@ -73,12 +73,12 @@ impl ConsumeFen for Position0x88 {
         self.set_ep_square(ep_square);
 
         match fen.halfmove.parse::<u32>() {
-            Err(_e) => return Err(FenError::InvalidDigit),
+            Err(_e) => return Err(FenError::InvalidDigit(fen.halfmove)),
             Ok(halfmove) => self.halfmove_clock = halfmove,
         }
 
         match fen.fullmove.parse::<u32>() {
-            Err(_e) => return Err(FenError::InvalidDigit),
+            Err(_e) => return Err(FenError::InvalidDigit(fen.fullmove)),
             Ok(fullmove) => self.fullmove_number = fullmove,
         }
 
@@ -125,7 +125,7 @@ pub fn to_fen(position: &Position0x88) -> String {
     result.push(colour_to_char(position.side_to_move).unwrap_or_else(|| '-'));
     result.push(' ');
     result.push_str(castling_rights_to_string(&position.castling_rights).as_str());
-    let mut ep_string = position.ep_square.to_algebraic_notation();
+    let mut ep_string = position.ep_square.sq_to_algebraic_notation();
     if ep_string == "a1" {
         ep_string = "-".to_string();
     }
@@ -164,14 +164,14 @@ pub fn set_piece_placements(
                 match skip_num {
                     Some(empty_count) => {
                         if empty_count > 8 {
-                            return Err(FenError::InvalidDigit);
+                            return Err(FenError::InvalidDigit(chr.to_string()));
                         }
                         for _ in 0..empty_count {
                             position.set_square_to_piece(current_index, EMPTY);
                             current_index += 1;
                         }
                     }
-                    None => return Err(FenError::InvalidDigit),
+                    None => return Err(FenError::InvalidDigit(chr.to_string())),
                 }
             } else {
                 let piece_result = char_to_piece(chr);
@@ -180,7 +180,7 @@ pub fn set_piece_placements(
                         position.set_square_to_piece(current_index, piece);
                         current_index += 1;
                     }
-                    None => return Err(FenError::InvalidPiece),
+                    None => return Err(FenError::InvalidPiece(chr)),
                 }
             }
         }

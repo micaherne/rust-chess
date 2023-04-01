@@ -24,8 +24,8 @@ impl<S: SquareIndex, P: Piece> Display for Move<S, P> {
         write!(
             f,
             "{}{}",
-            self.from_index.to_algebraic_notation(),
-            self.to_index.to_algebraic_notation()
+            self.from_index.sq_to_algebraic_notation(),
+            self.to_index.sq_to_algebraic_notation()
         )?;
         if let Some(q) = &self.queening_piece {
             write!(f, "{}", q.to_algebraic_notation())?;
@@ -47,8 +47,8 @@ pub type Move0x88 = Move<SquareIndex0x88, PieceStandard>;
 impl From<&Move0x88> for LongAlgebraicNotationMove {
     fn from(value: &Move0x88) -> Self {
         let mut text = String::new();
-        text.push_str(value.from_index.to_algebraic_notation().as_str());
-        text.push_str(value.to_index.to_algebraic_notation().as_str());
+        text.push_str(value.from_index.sq_to_algebraic_notation().as_str());
+        text.push_str(value.to_index.sq_to_algebraic_notation().as_str());
         if let Some(q) = value.queening_piece {
             text.push(piece_type_to_char(q).unwrap_or(' '));
         }

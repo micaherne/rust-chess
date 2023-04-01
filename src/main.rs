@@ -5,8 +5,10 @@ pub mod messages;
 pub mod perft;
 pub mod position;
 pub mod position0x88;
+pub mod position64;
 pub mod search;
 pub mod transposition;
+pub mod zobrist;
 
 use std::{collections::VecDeque, env, sync::mpsc, thread};
 

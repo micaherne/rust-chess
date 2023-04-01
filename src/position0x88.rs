@@ -2,7 +2,11 @@ use std::fmt::Debug;
 
 use crate::{
     bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
-    position::{BoardSide, CastlingRights, MoveUndo, Piece, Position, SetPosition, SquareIndex},
+    fen::FenError,
+    position::{
+        BoardSide, CastlingRights, MoveUndo, Piece, Position, RankOrFileIndex, SetPosition,
+        SquareIndex,
+    },
     position0x88::movegen_simple::is_valid_square,
     transposition::{Hashable, ZobristNumber, ZobristNumbers},
 };
@@ -10,7 +14,7 @@ use crate::{
 use self::{
     movegen::{GenerateMoves, Move0x88},
     movegen_simple::{generate_moves, PIECE_TYPES_COUNT},
-    notation::{piece_to_char, piece_type_to_char},
+    notation::{char_to_piece_type, piece_to_char, piece_type_to_char},
 };
 
 pub mod evaluate;
@@ -49,14 +53,38 @@ pub const QUEEN: PieceType = 5;
 pub const KING: PieceType = 6;
 
 pub type SquareIndex0x88 = usize;
-pub type RankOrFileIndex = u8;
 
 impl SquareIndex for SquareIndex0x88 {
-    fn to_algebraic_notation(&self) -> String {
+    fn sq_to_algebraic_notation(&self) -> String {
         let mut result = String::new();
         result.push((file(*self) + 97) as char);
         result.push((rank(*self) + 0x31) as char);
         result
+    }
+
+    fn from_rank_and_file(rank: RankOrFileIndex, file: RankOrFileIndex) -> Self {
+        ((rank << 4) | file) as Self
+    }
+
+    fn sq_from_algebraic_notation(algebraic_notation: &str) -> Result<Self, FenError>
+    where
+        Self: Sized,
+    {
+        if algebraic_notation.len() != 2 {
+            return Err(FenError::InvalidSquare(algebraic_notation.into()));
+        }
+
+        let file = algebraic_notation.chars().nth(0).unwrap() as u8 - 97;
+        let rank = algebraic_notation.chars().nth(1).unwrap() as u8 - 0x31;
+
+        if file > 7 || rank > 7 {
+            return Err(FenError::InvalidSquare(algebraic_notation.into()));
+        }
+
+        Ok(Self::from_rank_and_file(
+            rank as RankOrFileIndex,
+            file as RankOrFileIndex,
+        ))
     }
 }
 
@@ -74,6 +102,22 @@ impl Piece for PieceStandard {
                 }
             }
         }
+    }
+
+    fn from_algebraic_notation(algebraic_notation: char) -> Result<Self, FenError>
+    where
+        Self: Sized,
+    {
+        let piece_type = char_to_piece_type(algebraic_notation);
+        if piece_type.is_none() {
+            return Ok(EMPTY);
+        }
+        let colour = if algebraic_notation.is_uppercase() {
+            WHITE
+        } else {
+            BLACK
+        };
+        Ok(piece_type.unwrap() | (colour << COLOUR_BIT))
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{
-    position::SquareIndex,
+    fen::FenError,
+    position::{RankOrFileIndex, SquareIndex},
     position0x88::{
         index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex0x88, BISHOP,
         BLACK, QUEEN, ROOK, WHITE,
@@ -8,6 +9,7 @@ use crate::{
 
 pub type Bitboard = u64;
 pub type SquareIndex64 = u8;
+
 pub type Direction = i8;
 
 /// Index for a file, rank, diagonal or antidiagonal.
@@ -18,16 +20,44 @@ pub type SixteenBitboards = [Bitboard; 16];
 pub type SixtyFourBitboards = [Bitboard; 64];
 
 impl SquareIndex for SquareIndex64 {
-    fn to_algebraic_notation(&self) -> String {
+    fn sq_to_algebraic_notation(&self) -> String {
         let file = self % 8;
         let rank = self / 8;
         format!("{}{}", (file + b'a') as char, rank + 1)
+    }
+
+    fn from_rank_and_file(rank: RankOrFileIndex, file: RankOrFileIndex) -> Self {
+        (rank * 8 + file) as SquareIndex64
+    }
+
+    fn sq_from_algebraic_notation(algebraic_notation: &str) -> Result<Self, FenError>
+    where
+        Self: Sized,
+    {
+        let mut chars = algebraic_notation.chars();
+        let file = chars
+            .next()
+            .ok_or(FenError::InvalidSquare(algebraic_notation.to_string()))?;
+        let rank = chars
+            .next()
+            .ok_or(FenError::InvalidSquare(algebraic_notation.to_string()))?;
+        let file = file as u8 - b'a';
+        let rank = rank as u8 - b'1';
+        if file > 7 || rank > 7 {
+            Err(FenError::InvalidSquare(algebraic_notation.to_string()))
+        } else {
+            Ok(Self::from_rank_and_file(
+                rank as RankOrFileIndex,
+                file as RankOrFileIndex,
+            ))
+        }
     }
 }
 
 pub trait BitboardOps {
     fn squares_from_bitboard(&self) -> Vec<SquareIndex64>;
     fn to_single_square(&self) -> Result<SquareIndex64, BitboardError>;
+    fn from_single_square(square: SquareIndex64) -> Self;
     fn highest_set_bit(&self) -> SquareIndex64;
     fn lowest_set_bit(&self) -> SquareIndex64;
 }
@@ -50,6 +80,11 @@ impl BitboardOps for Bitboard {
         } else {
             Ok(self.trailing_zeros() as SquareIndex64)
         }
+    }
+
+    fn from_single_square(square: SquareIndex64) -> Self {
+        debug_assert!(square < 64);
+        1 << square
     }
 
     /// Get the highest set bit.

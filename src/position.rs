@@ -1,15 +1,32 @@
 use crate::{
-    fen::{ConsumeFen, Fen},
+    fen::{ConsumeFen, Fen, FenError},
     position0x88::{make_moves::MakeMoves, Colour},
     transposition::Hashable,
 };
 
+pub const PIECE_COUNT: usize = 7;
+
+/// A number representing a rank or a file.
+pub type RankOrFileIndex = u8;
+
 pub trait SquareIndex {
-    fn to_algebraic_notation(&self) -> String;
+    // These have sq to distinguish them from the methods on the Piece trait (when applied to PieceStandard
+    // which is a u8 the same as SquareIndex64). This sucks and could do with being fixed.
+    fn sq_to_algebraic_notation(&self) -> String;
+    fn sq_from_algebraic_notation(algebraic_notation: &str) -> Result<Self, FenError>
+    where
+        Self: Sized;
+    fn from_rank_and_file(rank: RankOrFileIndex, file: RankOrFileIndex) -> Self;
 }
 
 pub trait Piece {
     fn to_algebraic_notation(&self) -> String;
+
+    /// Returns the piece type given an algebraic notation character.
+    /// This should also return the empty type for a space.
+    fn from_algebraic_notation(algebraic_notation: char) -> Result<Self, FenError>
+    where
+        Self: Sized;
 }
 
 /// Marker trait for positions.
@@ -20,10 +37,7 @@ pub trait Position<S: SquareIndex, P: Piece>:
 
 /// Enables pieces to be set and retrieved in the position.
 ///
-pub trait SetPosition<S: SquareIndex, P: Piece>
-where
-    Self: Position<S, P>,
-{
+pub trait SetPosition<S: SquareIndex, P: Piece> {
     fn set_square_to_piece(&mut self, square: S, piece: P);
     fn remove_from_square(&mut self, square: S);
     fn square_piece(&self, square: S) -> P;
@@ -53,7 +67,7 @@ pub enum BoardSide {
     Kingside,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CastlingRights {
     pub flags: u8, // KQkq
 }
