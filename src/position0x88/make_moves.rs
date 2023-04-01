@@ -1,7 +1,7 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
-    position::{BoardSide, MakeMoves, MoveUndo, Piece, SetPosition, SquareIndex},
+    position::{BoardSide, MakeMoves, MoveUndo, SetPosition},
     position0x88::{
         file, get_piece,
         notation::{to_fen, A_ROOK_HOME_SQUARES, H_ROOK_HOME_SQUARES, KING_HOME_SQUARES},
