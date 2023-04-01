@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     notation::{char_to_piece_type, str_to_square_index},
-    MoveUndo0x88, PieceStandard, PieceType, Position0x88, SquareIndex0x88,
+    CastlingRights0x88, MoveUndo0x88, PieceStandard, PieceType, Position0x88, SquareIndex0x88,
 };
 
 pub trait ExtractMove {
@@ -40,7 +40,7 @@ impl ExtractMove for LongAlgebraicNotationMove {
     }
 }
 
-impl MakeMoves<SquareIndex0x88, PieceStandard> for Position0x88 {
+impl MakeMoves<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0x88 {
     fn make_moves(&mut self, moves: &Vec<LongAlgebraicNotationMove>) -> Vec<MoveUndo0x88> {
         let mut result: Vec<MoveUndo0x88> = vec![];
         for mv in moves {

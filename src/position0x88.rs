@@ -33,7 +33,7 @@ pub type Colour = u8;
 /// A piece with colour, e.g. a black knight.
 pub type PieceStandard = u8;
 
-pub type MoveUndo0x88 = MoveUndo<SquareIndex0x88, PieceType>;
+pub type MoveUndo0x88 = MoveUndo<SquareIndex0x88, PieceType, CastlingRights0x88>;
 
 // Colours.
 pub const WHITE: Colour = 0;
@@ -121,13 +121,51 @@ impl Piece for PieceStandard {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CastlingRights0x88 {
+    pub flags: u8, // KQkq
+}
+
+impl CastlingRights0x88 {
+    pub fn new() -> CastlingRights0x88 {
+        CastlingRights0x88 { flags: 0 }
+    }
+
+    pub fn allow(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let mask = Self::mask(colour, side);
+        self.flags |= mask;
+    }
+
+    pub fn remove(&mut self, colour: Colour, side: Option<BoardSide>) {
+        let mask = Self::mask(colour, side);
+        self.flags = self.flags & !(mask);
+    }
+
+    pub fn allowed(&self, colour: Colour, side: BoardSide) -> bool {
+        let mask = Self::mask(colour, Some(side));
+        self.flags & mask != 0
+    }
+
+    #[inline]
+    fn mask(colour: Colour, side: Option<BoardSide>) -> u8 {
+        let colour_shift = 2 * (1 - colour);
+        let mask = match side {
+            None => 0b11,
+            Some(castling_side) => 1 << castling_side as u32,
+        };
+        mask << colour_shift
+    }
+}
+
+impl CastlingRights for CastlingRights0x88 {}
+
 #[derive(Clone, Copy)]
 pub struct Position0x88 {
     squares0x88: [PieceStandard; 128],
     squares: [PieceStandard; 64],
     king_squares: [SquareIndex0x88; 2],
     side_to_move: Colour,
-    castling_rights: CastlingRights,
+    castling_rights: CastlingRights0x88,
     ep_square: SquareIndex0x88,
     halfmove_clock: u32,
     fullmove_number: u32,
@@ -138,7 +176,7 @@ pub struct Position0x88 {
     pub bb_colours: [Bitboard; 3],
 }
 
-impl Position<SquareIndex0x88, PieceStandard> for Position0x88 {}
+impl Position<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0x88 {}
 
 impl SetPosition<SquareIndex0x88, PieceStandard> for Position0x88 {
     fn set_square_to_piece(&mut self, square: SquareIndex0x88, piece: PieceStandard) {
@@ -190,7 +228,7 @@ impl Position0x88 {
         self.ep_square = square;
     }
 
-    pub fn set_castling_rights(&mut self, castling_rights: CastlingRights) {
+    pub fn set_castling_rights(&mut self, castling_rights: CastlingRights0x88) {
         for i in 0..4 {
             let mask = 1 << i;
             if (self.castling_rights.flags & mask) != castling_rights.flags & mask {
@@ -268,7 +306,7 @@ impl Default for Position0x88 {
             squares: [0; 64],
             king_squares: [0; 2],
             side_to_move: WHITE,
-            castling_rights: CastlingRights::new(),
+            castling_rights: CastlingRights0x88::new(),
             ep_square: 0,
             halfmove_clock: 0,
             fullmove_number: 0,
@@ -437,5 +475,28 @@ mod test {
             i += 1;
         }
         assert_eq!(64, i);
+    }
+
+    #[test]
+    fn test_castling_rights() {
+        let mut castling = CastlingRights0x88::new();
+        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
+        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
+        castling.allow(WHITE, None);
+        assert!(castling.allowed(WHITE, BoardSide::Kingside));
+        assert!(castling.allowed(WHITE, BoardSide::Queenside));
+        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
+        castling.remove(WHITE, Some(BoardSide::Kingside));
+        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
+        assert!(castling.allowed(WHITE, BoardSide::Queenside));
+        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
+        castling.allow(BLACK, Some(BoardSide::Kingside));
+        assert!(!castling.allowed(WHITE, BoardSide::Kingside));
+        assert!(castling.allowed(WHITE, BoardSide::Queenside));
+        assert!(!castling.allowed(BLACK, BoardSide::Queenside));
+        assert!(castling.allowed(BLACK, BoardSide::Kingside));
+
+        let castling2 = CastlingRights0x88 { flags: 0b1011 };
+        assert!(!castling2.allowed(WHITE, BoardSide::Queenside));
     }
 }

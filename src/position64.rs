@@ -3,10 +3,12 @@ use std::{fmt::Debug, str::FromStr};
 use crate::{
     bitboards::{file, square_mask64, Bitboard, BitboardOps, SquareIndex64},
     fen::{Fen, FenError},
-    position::{Piece, SetPosition, SquareIndex, PIECE_COUNT},
+    position::{Castling, CastlingRights, Piece, SetPosition, SquareIndex, PIECE_COUNT},
     transposition::Hashable,
     zobrist::{ZobristNumber, ZOBRIST_NUMBERS},
 };
+
+use super::position::HasCastlingRights;
 
 /// The colour of a piece.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -115,25 +117,15 @@ impl Piece for PieceWithColour {
 pub type SixtyFourPieces = [PieceWithColour; 64];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CastlingRights([bool; 4]);
+pub struct CastlingRightsBool([bool; 4]);
 
-pub enum Castling {
-    WhiteKingSide,
-    WhiteQueenSide,
-    BlackKingSide,
-    BlackQueenSide,
-}
-
-trait HasCastlingRights {
-    fn can_castle(&self, castling: Castling) -> bool;
-    fn set_castling(&mut self, castling: Castling, can_castle: bool);
-}
+impl CastlingRights for CastlingRightsBool {}
 
 #[derive(Clone, Copy)]
 pub struct Position64 {
     squares: SixtyFourPieces,
     side_to_move: Colour,
-    castling_rights: CastlingRights,
+    castling_rights: CastlingRightsBool,
     ep_square: Bitboard,
     halfmove_clock: u32,
     fullmove_number: u32,

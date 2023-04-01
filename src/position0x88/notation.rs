@@ -5,7 +5,7 @@ use crate::{
 
 /// Notation functions specific to the position0x88 setup.
 use super::{
-    movegen_simple::is_valid_square, square_index, BoardSide, CastlingRights, Colour,
+    movegen_simple::is_valid_square, square_index, BoardSide, CastlingRights0x88, Colour,
     PieceStandard, PieceType, Position0x88, SquareIndex0x88, BISHOP, BLACK, COLOUR_BIT_MASK, EMPTY,
     KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
@@ -41,7 +41,7 @@ impl ConsumeFen for Position0x88 {
             return Err(FenError::InvalidCastlingInfo(castling_chars.to_string()));
         }
 
-        self.castling_rights = CastlingRights::new();
+        self.castling_rights = CastlingRights0x88::new();
 
         if castling_chars != "-" {
             for c in castling_chars.chars() {
@@ -296,7 +296,7 @@ pub fn piece_to_char(p: PieceStandard) -> Option<char> {
     }
 }
 
-pub fn castling_rights_to_string(castling: &CastlingRights) -> String {
+pub fn castling_rights_to_string(castling: &CastlingRights0x88) -> String {
     let mut result = String::new();
     for (i, c) in "KQkq".chars().enumerate() {
         if castling.flags & (1 << (3 - i)) != 0 {

@@ -11,7 +11,7 @@ use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
     fen::{Fen, FenError},
-    position::{Piece, Position, SquareIndex},
+    position::{CastlingRights, Piece, Position, SquareIndex},
     position0x88::{
         movegen::{GenerateMoves, Move},
         notation::set_from_fen,
@@ -19,18 +19,24 @@ use crate::{
     },
 };
 
-pub struct Perft<T: Position<S, P>, S: SquareIndex, P: Piece> {
+pub struct Perft<T: Position<S, P, C>, S: SquareIndex, P: Piece, C: CastlingRights> {
     position: T,
+    c: PhantomData<C>,
     s: PhantomData<S>,
     p: PhantomData<P>,
 }
 
-impl<T: Position<S, P> + GenerateMoves<S, P>, S: SquareIndex + Clone, P: Piece + Clone>
-    Perft<T, S, P>
+impl<
+        T: Position<S, P, C> + GenerateMoves<S, P>,
+        S: SquareIndex + Clone,
+        P: Piece + Clone,
+        C: CastlingRights,
+    > Perft<T, S, P, C>
 {
     pub fn new(position: T) -> Self {
         Self {
             position,
+            c: PhantomData,
             s: PhantomData,
             p: PhantomData,
         }

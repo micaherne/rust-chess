@@ -6,15 +6,15 @@ use crate::{
 use super::{
     file,
     movegen_simple::{can_evade_check, side_to_move_in_check},
-    piece_type, rank, square_iter, PieceStandard, SquareIndex0x88, BISHOP, EMPTY, KING, KNIGHT,
-    PAWN, QUEEN, ROOK, WHITE,
+    piece_type, rank, square_iter, CastlingRights0x88, PieceStandard, SquareIndex0x88, BISHOP,
+    EMPTY, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE,
 };
 
 pub type Score = i32;
 
 pub type PieceSquareTable = [Score; 64];
 
-impl Evaluate<Score, SquareIndex0x88, PieceStandard> for Position0x88 {
+impl Evaluate<Score, SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0x88 {
     fn evaluate(&self) -> Score {
         evaluate(&self)
     }
