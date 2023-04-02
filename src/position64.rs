@@ -303,9 +303,11 @@ mod test {
     #[test]
     fn test_opposite_colour() {
         let mut pos = Position64::default();
-        assert_eq!(pos.opposite_colour(), Colour::Black);
+        assert_eq!(pos.opposite_colour(), Colour::None);
         pos.side_to_move = Colour::Black;
         assert_eq!(pos.opposite_colour(), Colour::White);
+        pos.side_to_move = Colour::White;
+        assert_eq!(pos.opposite_colour(), Colour::Black);
     }
 
     #[test]
