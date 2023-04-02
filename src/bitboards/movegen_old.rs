@@ -415,7 +415,7 @@ mod test {
         assert_eq!(Bitboard::MAX, pos2.pin_mask(20));
         // Diagonal e.p. pin.
         let pos3: Position = "6k1/1q6/8/3pP3/8/4B3/8/7K w - d6 0 1".into();
-        // Everything except the en-passent square.
+        // Everything except the en-passant square.
         assert_eq!(0xfffff7ffffffffff, pos3.pin_mask(36));
 
         // Horizontal e.p. pin.

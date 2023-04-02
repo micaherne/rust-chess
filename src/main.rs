@@ -30,7 +30,7 @@ fn main() {
         "uci" => run_uci(),
         "perft" => run_perft(args),
         "perftcompare" => run_perft_compare(&mut args),
-        "divide" => run_divide(args),
+        "divide" => run_divide(args).unwrap(),
         _ => println!("Invalid command {}", command),
     }
 }

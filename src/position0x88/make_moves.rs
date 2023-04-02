@@ -67,10 +67,10 @@ impl MakeMoves<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0
 
         let is_pawn_move = moved_piece_type == PAWN;
 
-        let is_enpassent = is_pawn_move && self.ep_square != 0 && to_index == self.ep_square;
+        let is_enpassant = is_pawn_move && self.ep_square != 0 && to_index == self.ep_square;
         let mut capture_square = to_index;
 
-        if is_enpassent {
+        if is_enpassant {
             capture_square = match from_index < to_index {
                 true => to_index - 16,
                 false => to_index + 16,
@@ -186,7 +186,7 @@ impl MakeMoves<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0
         }
 
         // Remove the e.p. capture if necessary.
-        if is_enpassent {
+        if is_enpassant {
             self.remove_from_square(capture_square);
         }
 
@@ -208,11 +208,11 @@ impl MakeMoves<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0
     }
 
     fn undo_move(&mut self, undo: MoveUndo0x88) {
-        // En passent.
-        let is_enpassent =
+        // En passant.
+        let is_enpassant =
             undo.to_index == undo.ep_square && piece_type(self.squares0x88[undo.to_index]) == PAWN;
         let mut capture_square = undo.to_index;
-        if is_enpassent {
+        if is_enpassant {
             capture_square = match undo.from_index < undo.to_index {
                 true => undo.to_index - 16,
                 false => undo.to_index + 16,
@@ -246,7 +246,7 @@ impl MakeMoves<SquareIndex0x88, PieceStandard, CastlingRights0x88> for Position0
 
         self.set_square_to_piece(undo.from_index, undo.moved_piece);
 
-        if is_enpassent {
+        if is_enpassant {
             self.remove_from_square(undo.to_index);
         }
 

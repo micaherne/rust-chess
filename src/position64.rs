@@ -1,8 +1,12 @@
 pub mod movegen_bb;
-use std::{fmt::Debug, str::FromStr};
+pub mod moves;
+use std::{
+    fmt::{Debug, Display, Error},
+    str::FromStr,
+};
 
 use crate::{
-    bitboards::{file, square_mask64, Bitboard, BitboardOps, SquareIndex64},
+    bitboards::{file, Bitboard, BitboardOps, SquareIndex64},
     fen::{Fen, FenError},
     position::{Castling, CastlingRights, Piece, SetPosition, SquareIndex, PIECE_COUNT},
     transposition::Hashable,
@@ -28,6 +32,13 @@ impl Colour {
             Colour::None => Colour::None,
         }
     }
+    pub fn to_algebraic_notation(&self) -> String {
+        match self {
+            Colour::White => "w".to_string(),
+            Colour::Black => "b".to_string(),
+            Colour::None => "-".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,6 +51,38 @@ pub enum PieceType {
     Bishop,
     Queen,
     King,
+}
+
+impl AlgebraicNotation for PieceType {
+    fn to_algebraic_notation(&self) -> String {
+        match self {
+            PieceType::Pawn => "p".to_string(),
+            PieceType::Rook => "r".to_string(),
+            PieceType::Knight => "n".to_string(),
+            PieceType::Bishop => "b".to_string(),
+            PieceType::Queen => "q".to_string(),
+            PieceType::King => "k".to_string(),
+            PieceType::Empty => " ".to_string(),
+        }
+    }
+
+    fn from_algebraic_notation(algebraic_notation: &str) -> Result<Self, FenError>
+    where
+        Self: Sized,
+    {
+        match algebraic_notation {
+            "p" => Ok(PieceType::Pawn),
+            "r" => Ok(PieceType::Rook),
+            "n" => Ok(PieceType::Knight),
+            "b" => Ok(PieceType::Bishop),
+            "q" => Ok(PieceType::Queen),
+            "k" => Ok(PieceType::King),
+            " " => Ok(PieceType::Empty),
+            _ => Err(FenError::InvalidPiece(
+                algebraic_notation.chars().nth(0).unwrap(),
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,6 +168,13 @@ impl Piece for PieceWithColour {
     }
 }
 
+pub trait AlgebraicNotation {
+    fn to_algebraic_notation(&self) -> String;
+    fn from_algebraic_notation(algebraic_notation: &str) -> Result<Self, FenError>
+    where
+        Self: Sized;
+}
+
 pub type SixtyFourPieces = [PieceWithColour; 64];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -173,7 +223,7 @@ impl SetPosition<SquareIndex64, PieceWithColour> for Position64 {
         self.hash_key ^= ZOBRIST_NUMBERS.piece_square[piece.colour as usize]
             [piece.piece_type as usize][square as usize];
 
-        let mask = square_mask64(square);
+        let mask = Bitboard::from_single_square(square);
         self.bb_pieces[current_piece.piece_type as usize] ^= mask;
         self.bb_colours[current_piece.colour as usize] ^= mask;
         self.bb_pieces[piece.piece_type as usize] ^= mask;
@@ -299,6 +349,62 @@ impl FromStr for Position64 {
     }
 }
 
+impl Display for Position64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut empty_count = 0;
+        for rank in (0..8).rev() {
+            for file in 0..8 {
+                let sq = SquareIndex64::from_rank_and_file(rank, file);
+                let piece = self.square_piece(sq);
+                if piece.piece_type == PieceType::Empty {
+                    empty_count += 1;
+                } else {
+                    if empty_count > 0 {
+                        write!(f, "{}", empty_count)?;
+                        empty_count = 0;
+                    }
+                    write!(f, "{}", piece.to_algebraic_notation())?;
+                }
+            }
+            if empty_count > 0 {
+                write!(f, "{}", empty_count)?;
+                empty_count = 0;
+            }
+            write!(f, "{}", if rank > 0 { "/" } else { " " })?;
+        }
+
+        write!(f, "{} ", self.side_to_move.to_algebraic_notation())?;
+
+        if self.castling_rights.0.iter().all(|&x| !x) {
+            write!(f, "- ")?;
+        } else {
+            if self.can_castle(Castling::WhiteKingSide) {
+                write!(f, "K")?;
+            }
+            if self.can_castle(Castling::WhiteQueenSide) {
+                write!(f, "Q")?;
+            }
+            if self.can_castle(Castling::BlackKingSide) {
+                write!(f, "k")?;
+            }
+            if self.can_castle(Castling::BlackQueenSide) {
+                write!(f, "q")?;
+            }
+            write!(f, " ")?;
+        }
+
+        if self.ep_square == 0 {
+            write!(f, "- ")?;
+        } else {
+            let ep_square_index = self.ep_square.to_single_square().or(Err(Error))?;
+            write!(f, "{} ", ep_square_index.sq_to_algebraic_notation())?;
+        }
+
+        writeln!(f, "{} {}", self.halfmove_clock, self.fullmove_number)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -335,5 +441,12 @@ mod test {
         assert_eq!(pos.ep_square, 0);
         assert_eq!(pos.halfmove_clock, 0);
         assert_eq!(pos.fullmove_number, 1);
+    }
+
+    #[test]
+    fn test_display() {
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let pos: Position64 = fen.parse().unwrap();
+        assert_eq!(pos.to_string(), fen);
     }
 }

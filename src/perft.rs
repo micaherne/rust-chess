@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     io::{BufRead, BufReader, Write},
-    marker::PhantomData,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     time::Instant,
     u8,
@@ -11,31 +10,24 @@ use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
     fen::{Fen, FenError},
-    moves::{GenerateMoves, Move},
-    position::{CastlingRights, Piece, Position, SquareIndex},
-    position0x88::{notation::set_from_fen, Position0x88},
+    position64::{
+        movegen_bb::MoveGenerator,
+        moves::{GenerateMoves, MakeMove, Move},
+        Position64,
+    },
 };
 
-pub struct Perft<T: Position<S, P, C>, S: SquareIndex, P: Piece, C: CastlingRights> {
-    position: T,
-    c: PhantomData<C>,
-    s: PhantomData<S>,
-    p: PhantomData<P>,
+pub struct Perft {
+    position: Position64,
+    move_generator: MoveGenerator,
 }
 
-impl<
-        T: Position<S, P, C> + GenerateMoves<S, P>,
-        S: SquareIndex + Clone,
-        P: Piece + Clone,
-        C: CastlingRights,
-    > Perft<T, S, P, C>
-{
-    pub fn new(position: T) -> Self {
+impl Perft {
+    pub fn new(position: Position64) -> Self {
+        let move_generator = MoveGenerator::default();
         Self {
             position,
-            c: PhantomData,
-            s: PhantomData,
-            p: PhantomData,
+            move_generator,
         }
     }
 
@@ -46,7 +38,9 @@ impl<
 
         assert!(depth > 0);
 
-        let moves: Vec<Move<S, P>> = self.position.generate_moves();
+        self.move_generator.init(&self.position);
+        let moves = self.move_generator.generate_moves();
+
         let mut nodes = 0;
 
         if depth == 1 {
@@ -54,9 +48,7 @@ impl<
         }
 
         for m in moves {
-            let undo = self
-                .position
-                .make_move(m.from_index, m.to_index, m.queening_piece);
+            let undo = self.position.make_move(m);
             nodes += self.perft(depth - 1)?;
             self.position.undo_move(undo);
         }
@@ -67,16 +59,15 @@ impl<
     pub fn divide(&mut self, depth: u16) -> DivideResults {
         let mut result = DivideResults::default();
 
-        let moves = self.position.generate_moves();
+        self.move_generator.init(&self.position);
+        let moves = self.move_generator.generate_moves();
 
         let mut total = 0;
 
         for m in moves {
             let mv: LongAlgebraicNotationMove = (m.clone()).into();
 
-            let undo = self
-                .position
-                .make_move(m.from_index, m.to_index, m.queening_piece);
+            let undo = self.position.make_move(m);
 
             let nodes = self.perft(depth - 1).unwrap();
             total += nodes;
@@ -136,17 +127,19 @@ impl<
     ) -> Result<DivideDiff, FenError> {
         // Get perft at a certain depth.
         let their_perft = engine.get_perft(fen, moves, depth);
-        let fen_obj: Fen = fen.try_into()?;
-        self.position.set_from_fen(fen_obj)?;
+        self.position = fen.parse()?;
 
-        let l: Vec<LongAlgebraicNotationMove> = moves
+        let long_alg_moves: Vec<LongAlgebraicNotationMove> = moves
             .iter()
             .map(|m| LongAlgebraicNotationMove {
                 text: m.to_string(),
             })
             .collect();
 
-        self.position.make_moves(&l);
+        for la_mv in long_alg_moves {
+            let mv: Move = la_mv.try_into()?;
+            self.position.make_move(mv);
+        }
 
         /* let f: Fen = self.position.try_into()?;
         println!("{}", f); */
@@ -193,7 +186,7 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
 
     let start_depth: u8 = parse_result.unwrap();
 
-    let pos: Position0x88 = Default::default();
+    let pos: Position64 = Default::default();
     let mut perft = Perft::new(pos);
 
     perft
@@ -343,7 +336,7 @@ fn diff_divides(ours: &DivideResults, theirs: &DivideResults) -> DivideDiff {
     result
 }
 
-pub fn run_divide(args: VecDeque<String>) {
+pub fn run_divide(args: VecDeque<String>) -> Result<(), FenError> {
     if args.len() < 1 {
         println!("Usage divide [fen] [depth=1]");
     }
@@ -352,13 +345,7 @@ pub fn run_divide(args: VecDeque<String>) {
     let depth = &args[1];
     let depth_int: u16 = depth.parse().unwrap_or(1);
 
-    let mut position = Position0x88::default();
-    let setup_result = set_from_fen(&mut position, fen);
-
-    if setup_result.is_err() {
-        println!("Invalid FEN");
-        return;
-    }
+    let position = fen.parse()?;
 
     let mut perft = Perft::new(position);
 
@@ -374,4 +361,5 @@ pub fn run_divide(args: VecDeque<String>) {
         divide.total,
         start_time.elapsed().as_secs()
     );
+    Ok(())
 }

@@ -1,10 +1,7 @@
 use crate::{
     fen::FenError,
-    position::{RankOrFileIndex, SquareIndex},
-    position0x88::{
-        index0x88to64, movegen_simple::PIECE_TYPES_COUNT, PieceType, SquareIndex0x88, BISHOP,
-        BLACK, QUEEN, ROOK, WHITE,
-    },
+    position::{RankOrFileIndex, SquareIndex, PIECE_COUNT},
+    position64::{Colour, PieceType},
 };
 
 pub type Bitboard = u64;
@@ -152,7 +149,15 @@ pub const fn is_diagonal(dir: Direction) -> bool {
 }
 
 pub const fn is_slider(piece_type: PieceType) -> bool {
-    piece_type == BISHOP || piece_type == ROOK || piece_type == QUEEN
+    match piece_type {
+        PieceType::Empty => false,
+        PieceType::Pawn => false,
+        PieceType::Rook => true,
+        PieceType::Knight => false,
+        PieceType::Bishop => true,
+        PieceType::Queen => true,
+        PieceType::King => false,
+    }
 }
 
 pub const fn slides_in_dir(piece_type: PieceType, dir: i8) -> bool {
@@ -160,9 +165,9 @@ pub const fn slides_in_dir(piece_type: PieceType, dir: i8) -> bool {
 
     let dir_index = dir_index(dir);
     match piece_type {
-        BISHOP => dir_index > 3,
-        ROOK => dir_index < 4,
-        QUEEN => true,
+        PieceType::Bishop => dir_index > 3,
+        PieceType::Rook => dir_index < 4,
+        PieceType::Queen => true,
         _ => false,
     }
 }
@@ -186,7 +191,7 @@ pub const BISHOP_ATTACK_SQUARES: SixtyFourBitboards = init_bishop_attacks();
 pub const QUEEN_ATTACK_SQUARES: SixtyFourBitboards = init_queen_attacks();
 pub const KING_ATTACK_SQUARES: SixtyFourBitboards = init_king_attacks();
 
-pub const PIECE_ATTACK_SQUARES: [SixtyFourBitboards; PIECE_TYPES_COUNT] = [
+pub const PIECE_ATTACK_SQUARES: [SixtyFourBitboards; PIECE_COUNT] = [
     [0; 64],
     [0; 64],
     ROOK_ATTACK_SQUARES,
@@ -334,12 +339,12 @@ const fn init_pawn_attacks() -> [SixtyFourBitboards; 2] {
 
     while sq < 56 {
         if file(sq) != 0 {
-            pawn_attack_squares[WHITE as usize][sq as usize] |= 1 << (sq + 7);
-            pawn_attack_squares[BLACK as usize][sq as usize] |= 1 << (sq - 9);
+            pawn_attack_squares[Colour::White as usize][sq as usize] |= 1 << (sq + 7);
+            pawn_attack_squares[Colour::Black as usize][sq as usize] |= 1 << (sq - 9);
         }
         if file(sq) != 7 {
-            pawn_attack_squares[WHITE as usize][sq as usize] |= 1 << (sq + 9);
-            pawn_attack_squares[BLACK as usize][sq as usize] |= 1 << (sq - 7);
+            pawn_attack_squares[Colour::White as usize][sq as usize] |= 1 << (sq + 9);
+            pawn_attack_squares[Colour::Black as usize][sq as usize] |= 1 << (sq - 7);
         }
         sq += 1;
     }
@@ -348,10 +353,10 @@ const fn init_pawn_attacks() -> [SixtyFourBitboards; 2] {
     // they are useful for check detection.
     let mut sq = 0;
     while sq < 8 {
-        pawn_attack_squares[WHITE as usize][sq as usize] =
-            pawn_attack_squares[WHITE as usize][sq + 8 as usize] >> 8;
-        pawn_attack_squares[BLACK as usize][sq + 56 as usize] =
-            pawn_attack_squares[BLACK as usize][sq + 48 as usize] << 8;
+        pawn_attack_squares[Colour::White as usize][sq as usize] =
+            pawn_attack_squares[Colour::White as usize][sq + 8 as usize] >> 8;
+        pawn_attack_squares[Colour::Black as usize][sq + 56 as usize] =
+            pawn_attack_squares[Colour::Black as usize][sq + 48 as usize] << 8;
         sq += 1;
     }
 
@@ -455,11 +460,6 @@ const fn init_king_attacks() -> SixtyFourBitboards {
     king_attacks
 }
 
-#[inline]
-pub const fn square_mask0x88(square: SquareIndex0x88) -> Bitboard {
-    1 << index0x88to64(square)
-}
-
 pub const fn square_mask64(square: SquareIndex64) -> Bitboard {
     1 << square
 }
@@ -519,9 +519,12 @@ mod test {
         assert_eq!(0x2010080402010000, DIAGONAL_MASK[9]);
         assert_eq!(0x8040201008040201, DIAGONAL_MASK[7]);
         assert_eq!(0x102040810, ANTIDIAGONAL_MASK[4]);
-        assert_eq!(0x1400000000, PAWN_ATTACK_SQUARES[WHITE as usize][27]);
-        assert_eq!(0x2, PAWN_ATTACK_SQUARES[BLACK as usize][8]);
-        assert_eq!(0x2800, PAWN_ATTACK_SQUARES[WHITE as usize][4]);
+        assert_eq!(
+            0x1400000000,
+            PAWN_ATTACK_SQUARES[Colour::White as usize][27]
+        );
+        assert_eq!(0x2, PAWN_ATTACK_SQUARES[Colour::Black as usize][8]);
+        assert_eq!(0x2800, PAWN_ATTACK_SQUARES[Colour::White as usize][4]);
 
         assert_eq!(0x3828, KING_ATTACK_SQUARES[4]);
     }

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
+    bitboards::{self, square_mask64, Bitboard, SquareIndex64},
     fen::FenError,
     moves::GenerateMoves,
     position::{
@@ -200,7 +200,7 @@ impl SetPosition<SquareIndex0x88, PieceStandard> for Position0x88 {
             self.king_squares[new_piece_colour] = square;
         }
 
-        let mask = square_mask0x88(square);
+        let mask = square_mask64(index0x88to64(square));
         self.bb_pieces[current_piece_type as usize] ^= mask;
         self.bb_colours[current_piece_colour] ^= mask;
         self.bb_pieces[new_piece_type as usize] ^= mask;

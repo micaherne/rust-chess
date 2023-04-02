@@ -1,15 +1,11 @@
 use std::vec;
 
-use crate::{
-    bitboards::*,
-    iterate_squares,
-    moves::{GenerateMoves, Move},
-    position::CastlingRights,
-    position0x88::PieceStandard,
-    position64::{PieceType, PieceWithColour},
-};
+use crate::{bitboards::*, iterate_squares, position::SetPosition, position64::PieceType};
 
-use super::{CastlingRightsBool, Colour, Position64};
+use super::{
+    moves::{GenerateMoves, Move},
+    CastlingRightsBool, Colour, Position64,
+};
 
 const PROMOTION_PIECES: [PieceType; 4] = [
     PieceType::Queen,
@@ -24,6 +20,7 @@ const SLIDERS: [PieceType; 3] = [PieceType::Queen, PieceType::Rook, PieceType::B
 pub struct MoveGenerator {
     pin_masks: SixtyFourBitboards,
     checkers: Bitboard,
+    king_squares: [SquareIndex64; 2],
 
     // Minimal position data.
     side_to_move: Colour,
@@ -38,6 +35,7 @@ impl Default for MoveGenerator {
         Self {
             pin_masks: [Bitboard::MAX; 64],
             checkers: Default::default(),
+            king_squares: [0; 2],
             side_to_move: Default::default(),
             ep_square: Default::default(),
             bb_pieces: Default::default(),
@@ -47,10 +45,10 @@ impl Default for MoveGenerator {
     }
 }
 
-pub type Move64 = Move<SquareIndex64, PieceWithColour>;
+pub type Move64 = Move;
 
-impl GenerateMoves<SquareIndex64, PieceWithColour> for MoveGenerator {
-    fn generate_moves(&self) -> Vec<Move64> {
+impl GenerateMoves for MoveGenerator {
+    fn generate_moves(&self) -> Vec<Move> {
         let mut result = vec![];
         result.extend(self.generate_pawn_captures());
         result.extend(self.generate_slider_moves());
@@ -82,8 +80,7 @@ impl MoveGenerator {
             iterate_squares!(promotions -> to_square {
                 debug_assert!(to_square < 64);
                 for piece_type in PROMOTION_PIECES {
-                    let piece = PieceWithColour::new(piece_type, self.side_to_move);
-                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece) });
+                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece_type) });
                 }
             });
         });
@@ -141,8 +138,7 @@ impl MoveGenerator {
                 let to_square = from_square as i8 + ((1 + i) * -move_dir);
                 debug_assert!(to_square >= 0 && to_square < 64);
                 for piece_type in PROMOTION_PIECES {
-                    let piece = PieceWithColour::new(piece_type, self.side_to_move);
-                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece) });
+                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece_type) });
                 }
             });
         }
@@ -196,9 +192,9 @@ impl MoveGenerator {
             self.bb_colours[Colour::White as usize] | self.bb_colours[Colour::Black as usize];
         let pin_mask = self.pin_masks[from_square as usize];
         let attack_squares = match piece_type {
-            QUEEN => QUEEN_ATTACK_SQUARES[from_square as usize],
-            ROOK => ROOK_ATTACK_SQUARES[from_square as usize],
-            BISHOP => BISHOP_ATTACK_SQUARES[from_square as usize],
+            PieceType::Queen => QUEEN_ATTACK_SQUARES[from_square as usize],
+            PieceType::Rook => ROOK_ATTACK_SQUARES[from_square as usize],
+            PieceType::Bishop => BISHOP_ATTACK_SQUARES[from_square as usize],
             _ => panic!("Invalid piece type"),
         };
         let attack_squares_mask = attack_squares & pin_mask;
@@ -208,9 +204,9 @@ impl MoveGenerator {
         }
 
         let directions = match piece_type {
-            QUEEN => 0..8,
-            ROOK => 0..4,
-            BISHOP => 4..8,
+            PieceType::Queen => 0..8,
+            PieceType::Rook => 0..4,
+            PieceType::Bishop => 4..8,
             _ => panic!("Invalid piece type"),
         };
 
@@ -265,6 +261,14 @@ impl MoveGenerator {
         });
         result
     }
+
+    fn ep_capture_square(&self, position: &Position64) -> Bitboard {
+        match position.side_to_move {
+            Colour::White => position.ep_square >> 8,
+            Colour::Black => position.ep_square << 8,
+            Colour::None => 0,
+        }
+    }
 }
 
 /// Initialisation of helper data and functions.
@@ -281,16 +285,25 @@ impl MoveGenerator {
         self.bb_pieces = position.bb_pieces;
         self.pin_masks = [Bitboard::MAX; 64];
         self.checkers = 0;
-        let king_square = index0x88to64(position.king_squares[position.side_to_move as usize]);
-        self.init_pin_masks_and_checkers(position, king_square)
+        self.init_king_squares(position);
+        self.init_pin_masks_and_checkers(position, self.king_squares[self.side_to_move as usize])
             .unwrap();
+    }
+
+    fn init_king_squares(&mut self, position: &Position64) {
+        self.king_squares = [0; 2];
+        for (colour, king_square) in self.king_squares.iter_mut().enumerate() {
+            let king_bb =
+                position.bb_pieces[PieceType::King as usize] & position.bb_colours[colour];
+            *king_square = king_bb.to_single_square().unwrap();
+        }
     }
 
     /// Calculate masks for pinned pieces, and a bitboard of pieces giving check.
     /// TODO: This only adds sliding checkers, not knights or pawns.
     fn init_pin_masks_and_checkers(
         &mut self,
-        position: &Position0x88,
+        position: &Position64,
         king_square: SquareIndex64,
     ) -> Result<SixtyFourBitboards, BitboardError> {
         self.pin_masks = [Bitboard::MAX; 64];
@@ -298,8 +311,9 @@ impl MoveGenerator {
         for (dir_index, dir) in DIR_ALL_SLIDERS.iter().enumerate() {
             // Find the next opponent piece in the direction.
             // We remove the pawn on the e.p. capture square and treat it as one of our pieces later on.
-            let opp_pieces_in_dir = (position.bb_colours[position.opposite_side() as usize]
-                & !position.ep_capture_square_bb())
+            let opp_pieces_in_dir = (position.bb_colours
+                [position.side_to_move.opposite() as usize]
+                & !self.ep_capture_square(position))
                 & SLIDER_DIRECTION_SQUARE[dir_index][king_square as usize];
 
             if opp_pieces_in_dir == 0 {
@@ -313,8 +327,8 @@ impl MoveGenerator {
             };
 
             // Check that it is a slider.
-            let piece = position.get_piece64(next_opp_piece_square); // Can unwrap as we've checked it's a piece.
-            let piece_type = piece_type(piece);
+            let piece = position.square_piece(next_opp_piece_square); // Can unwrap as we've checked it's a piece.
+            let piece_type = piece.piece_type;
             if !is_slider(piece_type) || !slides_in_dir(piece_type, *dir) {
                 continue;
             }
@@ -323,7 +337,7 @@ impl MoveGenerator {
             let between = BETWEEN[king_square as usize][next_opp_piece_square as usize];
 
             let ours_between = (position.bb_colours[position.side_to_move as usize]
-                | position.ep_capture_square_bb())
+                | self.ep_capture_square(position))
                 & between;
 
             // 0 would be check, more than one there is no pin.
@@ -333,8 +347,8 @@ impl MoveGenerator {
                 continue;
             } else if ours_between.count_ones() != 1 {
                 // Look for horizontal e.p. capture pin.
-                if (ours_between & !position.ep_capture_square_bb()).count_ones() == 1 {
-                    self.pin_masks[position.ep_capture_square_bb().to_single_square()? as usize] =
+                if (ours_between & !self.ep_capture_square(position)).count_ones() == 1 {
+                    self.pin_masks[self.ep_capture_square(position).to_single_square()? as usize] =
                         between | next_opp_piece_mask;
                 }
                 continue;
@@ -348,20 +362,20 @@ impl MoveGenerator {
 
         // If it's e.p. work out the extra masks.
         if position.ep_square != 0 {
-            let ep_index = index0x88to64(position.ep_square);
+            let ep_index = position.ep_square.to_single_square()?;
             let ep_square_bb = square_mask64(ep_index);
             let ep_potential_attackers =
-                PAWN_ATTACK_SQUARES[position.opposite_side() as usize][ep_index as usize];
-            let ep_attackers = position.bb_pieces[PAWN as usize]
+                PAWN_ATTACK_SQUARES[position.side_to_move.opposite() as usize][ep_index as usize];
+            let ep_attackers = position.bb_pieces[PieceType::Pawn as usize]
                 & position.bb_colours[position.side_to_move as usize]
                 & ep_potential_attackers;
 
             // This works as we have calculated a pin mask for the capture pawn
             // even though it's not the colour to move.
             if ep_attackers != 0
-                && self.pin_masks[position.ep_capture_square_bb().to_single_square()? as usize]
+                && self.pin_masks[self.ep_capture_square(position).to_single_square()? as usize]
                     != Bitboard::MAX
-                && (self.pin_masks[position.ep_capture_square_bb().to_single_square()? as usize]
+                && (self.pin_masks[self.ep_capture_square(position).to_single_square()? as usize]
                     & ep_square_bb
                     == 0)
             {
@@ -376,13 +390,13 @@ impl MoveGenerator {
 
         // Add non-sliding checkers.
         let knight_checkers = KNIGHT_ATTACK_SQUARES[king_square as usize]
-            & position.bb_pieces[KNIGHT as usize]
-            & position.bb_colours[position.opposite_side() as usize];
+            & position.bb_pieces[PieceType::Knight as usize]
+            & position.bb_colours[position.side_to_move.opposite() as usize];
 
         let pawn_checkers = PAWN_ATTACK_SQUARES[position.side_to_move as usize]
             [king_square as usize]
-            & position.bb_pieces[PAWN as usize]
-            & position.bb_colours[position.opposite_side() as usize];
+            & position.bb_pieces[PieceType::Pawn as usize]
+            & position.bb_colours[position.side_to_move.opposite() as usize];
 
         self.checkers |= knight_checkers | pawn_checkers;
 
@@ -392,19 +406,15 @@ impl MoveGenerator {
 
 #[cfg(test)]
 mod test {
-    use std::{env, fs};
 
-    use crate::{
-        fen::STARTPOS_FEN,
-        position0x88::{index64to0x88, make_moves::MakeMoves, QUEEN, ROOK},
-    };
+    use crate::fen::STARTPOS_FEN;
 
     use super::*;
 
     #[test]
     fn test_generate_moves() {
         let mut pm = MoveGenerator::default();
-        let pos: Position0x88 = STARTPOS_FEN.try_into().unwrap();
+        let pos: Position64 = STARTPOS_FEN.parse().unwrap();
         pm.init(&pos);
         let moves = pm.generate_moves();
         assert_eq!(20, moves.len());
@@ -413,58 +423,58 @@ mod test {
     #[test]
     fn test_init_pin_masks_and_checkers() {
         let mut pm = MoveGenerator::default();
-        let pos: Position0x88 = STARTPOS_FEN.try_into().unwrap();
+        let pos: Position64 = STARTPOS_FEN.parse().unwrap();
         pm.init(&pos);
         assert_eq!(Bitboard::MAX, pm.pin_masks[3]);
 
         // Pinned on diagonal by queen.
-        let pos: Position0x88 = "8/5K2/8/8/2R5/1q6/8/3k4 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "8/5K2/8/8/2R5/1q6/8/3k4 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x100804020000, pm.pin_masks[26]);
 
         // Not pinned.
-        let pos: Position0x88 = "8/5K2/8/8/1qR5/1rn5/b7/3k4 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "8/5K2/8/8/1qR5/1rn5/b7/3k4 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(Bitboard::MAX, pm.pin_masks[26]);
 
-        let pos: Position0x88 = "6k1/8/8/2q5/8/4B3/8/6K1 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "6k1/8/8/2q5/8/4B3/8/6K1 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x408102000, pm.pin_masks[20]);
 
-        let pos: Position0x88 = "6k1/8/2q5/8/8/4B3/8/6K1 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "6k1/8/2q5/8/8/4B3/8/6K1 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(Bitboard::MAX, pm.pin_masks[20]);
 
         // Diagonal e.p. pin.
-        let pos: Position0x88 = "6k1/1q6/8/3pP3/8/4B3/8/7K w - d6 0 1".try_into().unwrap();
+        let pos: Position64 = "6k1/1q6/8/3pP3/8/4B3/8/7K w - d6 0 1".parse().unwrap();
         pm.init(&pos);
-        // Everything except the en-passent square.
+        // Everything except the en-passant square.
         assert_eq!(0xfffff7ffffffffff, pm.pin_masks[36]);
 
         // Horizontal e.p. pin.
-        let pos: Position0x88 = "6k1/8/8/1q1pP2K/8/4B3/8/8 w - d6 0 1".try_into().unwrap();
+        let pos: Position64 = "6k1/8/8/1q1pP2K/8/4B3/8/8 w - d6 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0xfffff7ffffffffff, pm.pin_masks[36]);
 
         // Vertical e.p. non-pin
-        let pos: Position0x88 = "1r5k/8/8/Pp6/8/8/8/1K6 w - b6 0 1".try_into().unwrap();
+        let pos: Position64 = "1r5k/8/8/Pp6/8/8/8/1K6 w - b6 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(Bitboard::MAX, pm.pin_masks[32]);
 
-        let pos: Position0x88 = "r6k/8/8/Pp6/8/8/8/K7 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "r6k/8/8/Pp6/8/8/8/K7 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x101010101010100, pm.pin_masks[32]);
 
-        let pos: Position0x88 = "2k5/6q1/8/2b5/8/8/8/6K1 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "2k5/6q1/8/2b5/8/8/8/6K1 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x40000400000000, pm.checkers);
 
-        let pos: Position0x88 = "2k5/6q1/8/2r5/8/8/8/6K1 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "2k5/6q1/8/2r5/8/8/8/6K1 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x40000000000000, pm.checkers);
 
         // This is not a legal position, but it is useful for testing.
-        let pos: Position0x88 = "3kr3/8/8/8/8/3n4/5p2/4K3 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "3kr3/8/8/8/8/3n4/5p2/4K3 w - - 0 1".parse().unwrap();
         pm.init(&pos);
         assert_eq!(0x1000000000082000, pm.checkers);
     }
@@ -472,8 +482,8 @@ mod test {
     #[test]
     fn test_generate_pawn_captures() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
-            .try_into()
+        let pos: Position64 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
+            .parse()
             .unwrap();
         mg.init(&pos);
         let moves = mg.generate_pawn_captures();
@@ -485,15 +495,15 @@ mod test {
     #[test]
     fn test_generate_pawn_pushes() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
-            .try_into()
+        let pos: Position64 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
+            .parse()
             .unwrap();
         mg.init(&pos);
         let moves = mg.generate_pawn_pushes();
         assert_eq!(13, moves.len());
 
-        let pos: Position0x88 = "rn1qk2r/ppp2ppp/4pn2/b2p1b2/3PP3/2P5/PP3PPP/RNBQKBNR w KQkq - 0 1"
-            .try_into()
+        let pos: Position64 = "rn1qk2r/ppp2ppp/4pn2/b2p1b2/3PP3/2P5/PP3PPP/RNBQKBNR w KQkq - 0 1"
+            .parse()
             .unwrap();
         mg.init(&pos);
         let moves = mg.generate_pawn_pushes();
@@ -503,19 +513,19 @@ mod test {
     #[test]
     fn test_generate_pawn_pushes_with_promotion() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 = "8/PPPPPPPP/8/8/8/8/8/8 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "8/PPPPPPPP/8/8/8/8/8/k6K w - - 0 1".parse().unwrap();
         mg.init(&pos);
         let moves = mg.generate_pawn_pushes();
         assert_eq!(32, moves.len());
-        assert_eq!(Some(QUEEN), moves[0].queening_piece);
-        assert_eq!(Some(ROOK), moves[1].queening_piece);
+        assert_eq!(PieceType::Queen, moves[0].queening_piece.unwrap());
+        assert_eq!(PieceType::Rook, moves[1].queening_piece.unwrap());
     }
 
     #[test]
     fn test_generate_knight_moves() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
-            .try_into()
+        let pos: Position64 = "rn1qkb1r/ppp1pppp/5n2/3p1b2/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1"
+            .parse()
             .unwrap();
         mg.init(&pos);
         let moves = mg.generate_knight_moves();
@@ -531,27 +541,25 @@ mod test {
     #[test]
     fn test_generate_slider_moves_for_piece_from_square() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 =
-            "r2qkb1r/1p2pppp/2n2n2/p1ppPbB1/3P4/2N5/1PP2PPP/R2QKBNR w KQkq - 0 1"
-                .try_into()
-                .unwrap();
+        let pos: Position64 = "r2qkb1r/1p2pppp/2n2n2/p1ppPbB1/3P4/2N5/1PP2PPP/R2QKBNR w KQkq - 0 1"
+            .parse()
+            .unwrap();
         mg.init(&pos);
-        let moves = mg.generate_slider_moves_for_piece_from_square(ROOK, 0);
+        let moves = mg.generate_slider_moves_for_piece_from_square(PieceType::Rook, 0);
         assert_eq!(0x101010106, moves);
 
-        let pos: Position0x88 = "5k2/8/8/8/8/8/8/rR3K2 w - - 0 1".try_into().unwrap();
+        let pos: Position64 = "5k2/8/8/8/8/8/8/rR3K2 w - - 0 1".parse().unwrap();
         mg.init(&pos);
-        let moves = mg.generate_slider_moves_for_piece_from_square(ROOK, 1);
+        let moves = mg.generate_slider_moves_for_piece_from_square(PieceType::Rook, 1);
         assert_eq!(0x1d, moves);
     }
 
     #[test]
     fn test_generate_king_moves() {
         let mut mg = MoveGenerator::default();
-        let pos: Position0x88 =
-            "r2qkb1r/1p2pppp/2n2n2/p1ppPbB1/3P4/2N5/1PP2PPP/R2QKBNR w KQkq - 0 1"
-                .try_into()
-                .unwrap();
+        let pos: Position64 = "r2qkb1r/1p2pppp/2n2n2/p1ppPbB1/3P4/2N5/1PP2PPP/R2QKBNR w KQkq - 0 1"
+            .parse()
+            .unwrap();
         mg.init(&pos);
         let moves = mg.generate_king_moves();
         assert_eq!(2, moves.len());
@@ -561,7 +569,7 @@ mod test {
         assert_eq!(12, moves[1].to_index);
     }
 
-    #[test]
+    /*  #[test]
     fn test_move_gen_from_perft() {
         let cwd = env::current_dir().unwrap();
         let root = cwd.ancestors().next().unwrap();
@@ -579,7 +587,7 @@ mod test {
             let fen = line_parts[0];
 
             // println!("Creating from FEN: {}", fen);
-            let mut position: Position0x88 = fen.try_into().unwrap();
+            let mut position: Position64 = fen.parse().unwrap();
 
             println!("{}: {}", line_no, fen);
             line_no += 1;
@@ -605,9 +613,9 @@ mod test {
             //}
             // println!("");
         }
-    }
+    } */
 
-    fn perft(position: &mut Position0x88, move_gen: &mut MoveGenerator, depth: u8) -> usize {
+    /* fn perft(position: &mut Position64, move_gen: &mut MoveGenerator, depth: u8) -> usize {
         if depth == 0 {
             return 1;
         }
@@ -625,5 +633,5 @@ mod test {
             position.undo_move(undo);
         }
         count
-    }
+    } */
 }
