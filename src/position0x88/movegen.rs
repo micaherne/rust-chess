@@ -2,8 +2,6 @@ use std::fmt::Display;
 
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-pub mod movegen_bb;
-
 use crate::{
     moves::Move,
     position::{Piece, SquareIndex},
