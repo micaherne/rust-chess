@@ -4,20 +4,12 @@ use chess_uci::messages::LongAlgebraicNotationMove;
 
 pub mod movegen_bb;
 
-use crate::position::{Piece, SquareIndex};
+use crate::{
+    moves::Move,
+    position::{Piece, SquareIndex},
+};
 
 use super::{notation::piece_type_to_char, PieceStandard, SquareIndex0x88};
-
-pub trait GenerateMoves<S: SquareIndex, P: Piece> {
-    fn generate_moves(&self) -> Vec<Move<S, P>>;
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Move<S: SquareIndex, P: Piece> {
-    pub from_index: S,
-    pub to_index: S,
-    pub queening_piece: Option<P>,
-}
 
 impl<S: SquareIndex, P: Piece> Display for Move<S, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

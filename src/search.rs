@@ -9,10 +9,11 @@ use chess_uci::messages::{
 };
 
 use crate::{
+    moves::GenerateMoves,
     position::{Evaluate, MakeMoves},
     position0x88::{
         evaluate::{Score, CHECKMATE_SCORE_MAX},
-        movegen::{GenerateMoves, Move0x88},
+        movegen::Move0x88,
         movegen_simple::side_to_move_in_check,
         Position0x88, WHITE,
     },

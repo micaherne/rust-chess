@@ -1,3 +1,4 @@
+pub mod movegen_bb;
 use std::{fmt::Debug, str::FromStr};
 
 use crate::{
@@ -17,6 +18,16 @@ pub enum Colour {
     Black,
     #[default]
     None,
+}
+
+impl Colour {
+    pub fn opposite(&self) -> Self {
+        match self {
+            Colour::White => Colour::Black,
+            Colour::Black => Colour::White,
+            Colour::None => Colour::None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -196,14 +207,6 @@ impl HasCastlingRights for Position64 {
 }
 
 impl Position64 {
-    pub fn opposite_colour(&self) -> Colour {
-        match self.side_to_move {
-            Colour::White => Colour::Black,
-            Colour::Black => Colour::White,
-            Colour::None => Colour::None,
-        }
-    }
-
     pub fn set_ep_square(&mut self, square: Bitboard) {
         debug_assert!(square.count_ones() == 1);
 
@@ -302,10 +305,9 @@ mod test {
 
     #[test]
     fn test_opposite_colour() {
-        let mut pos = Position64::default();
-        assert_eq!(pos.opposite_colour(), Colour::Black);
-        pos.side_to_move = Colour::Black;
-        assert_eq!(pos.opposite_colour(), Colour::White);
+        assert_eq!(Colour::Black, Colour::White.opposite());
+        assert_eq!(Colour::White, Colour::Black.opposite());
+        assert_eq!(Colour::None, Colour::None.opposite());
     }
 
     #[test]

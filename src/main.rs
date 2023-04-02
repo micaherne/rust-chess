@@ -2,6 +2,7 @@ pub mod bitboards;
 pub mod engine;
 pub mod fen;
 pub mod messages;
+pub mod moves;
 pub mod perft;
 pub mod position;
 pub mod position0x88;

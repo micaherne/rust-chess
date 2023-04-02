@@ -3,16 +3,22 @@ use std::vec;
 use crate::{
     bitboards::*,
     iterate_squares,
-    moves::GenerateMoves,
-    position0x88::{PieceStandard, BISHOP, KING, QUEEN, ROOK},
+    moves::{GenerateMoves, Move},
+    position::CastlingRights,
+    position0x88::PieceStandard,
+    position64::{PieceType, PieceWithColour},
 };
 
-use super::{
-    super::{
-        index0x88to64, piece_type, Colour, PieceType, Position0x88, BLACK, KNIGHT, PAWN, WHITE,
-    },
-    Move,
-};
+use super::{CastlingRightsBool, Colour, Position64};
+
+const PROMOTION_PIECES: [PieceType; 4] = [
+    PieceType::Queen,
+    PieceType::Rook,
+    PieceType::Knight,
+    PieceType::Bishop,
+];
+
+const SLIDERS: [PieceType; 3] = [PieceType::Queen, PieceType::Rook, PieceType::Bishop];
 
 #[derive(Debug)]
 pub struct MoveGenerator {
@@ -24,6 +30,7 @@ pub struct MoveGenerator {
     ep_square: Bitboard,
     bb_pieces: [Bitboard; 7],
     bb_colours: [Bitboard; 3],
+    castling: CastlingRightsBool,
 }
 
 impl Default for MoveGenerator {
@@ -35,41 +42,14 @@ impl Default for MoveGenerator {
             ep_square: Default::default(),
             bb_pieces: Default::default(),
             bb_colours: Default::default(),
+            castling: Default::default(),
         }
     }
 }
 
-pub type Move64 = Move<SquareIndex64, PieceStandard>;
+pub type Move64 = Move<SquareIndex64, PieceWithColour>;
 
-fn opposite_side(side: Colour) -> Colour {
-    1 - side
-}
-
-// Private methods required for position.
-impl Position0x88 {
-    fn ep_capture_square_bb(&self) -> Bitboard {
-        if self.ep_square == 0 {
-            0
-        } else {
-            let offset = match self.side_to_move {
-                WHITE => -8,
-                BLACK => 8,
-                _ => 0,
-            };
-            1 << (index0x88to64(self.ep_square) as i32 + offset)
-        }
-    }
-
-    fn opposite_side(&self) -> Colour {
-        1 - self.side_to_move
-    }
-
-    fn get_piece64(&self, square: SquareIndex64) -> PieceStandard {
-        self.squares[square as usize]
-    }
-}
-
-impl GenerateMoves<SquareIndex64, PieceStandard> for MoveGenerator {
+impl GenerateMoves<SquareIndex64, PieceWithColour> for MoveGenerator {
     fn generate_moves(&self) -> Vec<Move64> {
         let mut result = vec![];
         result.extend(self.generate_pawn_captures());
@@ -86,10 +66,10 @@ impl MoveGenerator {
     fn generate_pawn_captures(&self) -> Vec<Move64> {
         let mut result = vec![];
         let mut our_pawns =
-            self.bb_colours[self.side_to_move as usize] & self.bb_pieces[PAWN as usize];
+            self.bb_colours[self.side_to_move as usize] & self.bb_pieces[PieceType::Pawn as usize];
         iterate_squares!(our_pawns -> from_square {
             let captures = PAWN_ATTACK_SQUARES[self.side_to_move as usize][from_square as usize]
-                & (self.bb_colours[opposite_side(self.side_to_move) as usize] | self.ep_square) & self.pin_masks[from_square as usize];
+                & (self.bb_colours[self.side_to_move.opposite() as usize] | self.ep_square) & self.pin_masks[from_square as usize];
 
             let mut promotions = captures & (RANK_MASK[0] | RANK_MASK[7]);
             let mut nonpromotions = captures & !(RANK_MASK[0] | RANK_MASK[7]);
@@ -101,8 +81,9 @@ impl MoveGenerator {
 
             iterate_squares!(promotions -> to_square {
                 debug_assert!(to_square < 64);
-                for piece_type in [QUEEN, ROOK, KNIGHT, BISHOP].iter() {
-                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(*piece_type) });
+                for piece_type in PROMOTION_PIECES {
+                    let piece = PieceWithColour::new(piece_type, self.side_to_move);
+                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece) });
                 }
             });
         });
@@ -112,7 +93,7 @@ impl MoveGenerator {
     fn generate_pawn_pushes(&self) -> Vec<Move64> {
         let mut result = vec![];
 
-        let mut our_pawns = self.our_pieces(PAWN);
+        let mut our_pawns = self.our_pieces(PieceType::Pawn);
         let mut our_pawns_mask = our_pawns;
 
         let mut aggregate_pin_mask: Bitboard = Bitboard::MAX;
@@ -123,17 +104,24 @@ impl MoveGenerator {
 
         let move_dir = PAWN_PUSH_DIRECTIONS[self.side_to_move as usize];
 
+        let rank_to_mask = match self.side_to_move {
+            Colour::White => RANK_MASK[2],
+            Colour::Black => RANK_MASK[5],
+            _ => panic!("Invalid side to move"),
+        };
+
         for i in 0..2 {
             if i == 1 {
-                our_pawns &= RANK_MASK[2 + (3 * self.side_to_move) as usize];
+                our_pawns &= rank_to_mask;
             }
 
             match self.side_to_move {
-                WHITE => our_pawns <<= 8,
-                BLACK => our_pawns >>= 8,
+                Colour::White => our_pawns <<= 8,
+                Colour::Black => our_pawns >>= 8,
                 _ => panic!("Invalid side to move"),
             }
-            our_pawns &= !(self.bb_colours[WHITE as usize] | self.bb_colours[BLACK as usize])
+            our_pawns &= !(self.bb_colours[Colour::White as usize]
+                | self.bb_colours[Colour::Black as usize])
                 & aggregate_pin_mask;
 
             if our_pawns == 0 {
@@ -152,8 +140,9 @@ impl MoveGenerator {
             iterate_squares!(promotions -> from_square {
                 let to_square = from_square as i8 + ((1 + i) * -move_dir);
                 debug_assert!(to_square >= 0 && to_square < 64);
-                for piece_type in [QUEEN, ROOK, KNIGHT, BISHOP].iter() {
-                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(*piece_type) });
+                for piece_type in PROMOTION_PIECES {
+                    let piece = PieceWithColour::new(piece_type, self.side_to_move);
+                    result.push(Move64 { from_index: from_square as SquareIndex64, to_index: to_square as SquareIndex64, queening_piece: Some(piece) });
                 }
             });
         }
@@ -163,7 +152,7 @@ impl MoveGenerator {
 
     fn generate_knight_moves(&self) -> Vec<Move64> {
         let mut result = vec![];
-        let mut our_knights = self.our_pieces(KNIGHT);
+        let mut our_knights = self.our_pieces(PieceType::Knight);
         iterate_squares!(our_knights -> from_square {
             let mut moves = KNIGHT_ATTACK_SQUARES[from_square as usize]
                 & !(self.bb_colours[self.side_to_move as usize])
@@ -178,8 +167,8 @@ impl MoveGenerator {
 
     fn generate_slider_moves(&self) -> Vec<Move64> {
         let mut result = vec![];
-        for piece_type in [QUEEN, ROOK, BISHOP].iter() {
-            result.extend(self.generate_slider_moves_for_piece(*piece_type));
+        for piece_type in SLIDERS {
+            result.extend(self.generate_slider_moves_for_piece(piece_type));
         }
         result
     }
@@ -203,7 +192,8 @@ impl MoveGenerator {
         from_square: SquareIndex64,
     ) -> Bitboard {
         let mut moves = 0;
-        let blockers = self.bb_colours[WHITE as usize] | self.bb_colours[BLACK as usize];
+        let blockers =
+            self.bb_colours[Colour::White as usize] | self.bb_colours[Colour::Black as usize];
         let pin_mask = self.pin_masks[from_square as usize];
         let attack_squares = match piece_type {
             QUEEN => QUEEN_ATTACK_SQUARES[from_square as usize],
@@ -263,7 +253,7 @@ impl MoveGenerator {
     fn generate_king_moves(&self) -> Vec<Move64> {
         // TODO: Castling and check detection.
         let mut result = vec![];
-        let mut our_king = self.our_pieces(KING);
+        let mut our_king = self.our_pieces(PieceType::King);
         iterate_squares!(our_king -> from_square {
             let mut moves = KING_ATTACK_SQUARES[from_square as usize]
                 & !(self.bb_colours[self.side_to_move as usize])
@@ -283,9 +273,10 @@ impl MoveGenerator {
     fn our_pieces(&self, piece_type: PieceType) -> Bitboard {
         self.bb_colours[self.side_to_move as usize] & self.bb_pieces[piece_type as usize]
     }
-    pub fn init(&mut self, position: &Position0x88) {
+    pub fn init(&mut self, position: &Position64) {
         self.side_to_move = position.side_to_move;
-        self.ep_square = square_mask0x88(position.ep_square);
+        self.ep_square = position.ep_square;
+
         self.bb_colours = position.bb_colours;
         self.bb_pieces = position.bb_pieces;
         self.pin_masks = [Bitboard::MAX; 64];
@@ -405,8 +396,7 @@ mod test {
 
     use crate::{
         fen::STARTPOS_FEN,
-        position::MakeMoves,
-        position0x88::{index64to0x88, QUEEN, ROOK},
+        position0x88::{index64to0x88, make_moves::MakeMoves, QUEEN, ROOK},
     };
 
     use super::*;

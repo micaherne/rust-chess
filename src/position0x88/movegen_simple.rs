@@ -998,8 +998,8 @@ mod test {
     use crate::{position0x88::{
         get_piece,
         notation::{set_from_fen, set_startpos},
-        BLACK, KING, PAWN, WHITE, movegen::GenerateMoves,
-    }, position::SetPosition, perft::Perft};
+        BLACK, KING, PAWN, WHITE,
+    }, position::SetPosition, perft::Perft, moves::GenerateMoves};
 
     use super::*;
 

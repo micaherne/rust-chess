@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use crate::{
     bitboards::{self, square_mask0x88, Bitboard, SquareIndex64},
     fen::FenError,
+    moves::GenerateMoves,
     position::{
         BoardSide, CastlingRights, MoveUndo, Piece, Position, RankOrFileIndex, SetPosition,
         SquareIndex,
@@ -12,7 +13,7 @@ use crate::{
 };
 
 use self::{
-    movegen::{GenerateMoves, Move0x88},
+    movegen::Move0x88,
     movegen_simple::{generate_moves, PIECE_TYPES_COUNT},
     notation::{char_to_piece_type, piece_to_char, piece_type_to_char},
 };
