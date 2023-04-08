@@ -3,24 +3,24 @@ use std::{
     sync::mpsc::{self, Receiver, Sender},
 };
 
-use chess_uci::messages::{InputMessage, LongAlgebraicNotationMove, OutputMessage};
+use chess_uci::messages::{InputMessage, OutputMessage};
 
 use crate::{
-    position::MakeMoves,
-    position0x88::{
-        notation::{set_from_fen, set_startpos},
-        MoveUndo0x88, Position0x88,
+    fen::STARTPOS_FEN,
+    position64::{
+        moves::{MakeMove, Move, MoveUndo},
+        Position64,
     },
     search::SearchTree,
 };
 
 pub struct Engine {
-    pub position: Position0x88,
+    pub position: Position64,
     options: EngineOptions,
     initialised: bool,
     receiver: Receiver<InputMessage>,
     sender: Sender<OutputMessage>,
-    undo_stack: Vec<MoveUndo0x88>, // the moves made to get to the position to be searched
+    undo_stack: Vec<MoveUndo>, // the moves made to get to the position to be searched
 }
 
 struct EngineOptions {
@@ -31,7 +31,7 @@ struct EngineOptions {
 impl Engine {
     pub fn new(receiver: Receiver<InputMessage>, sender: Sender<OutputMessage>) -> Engine {
         return Engine {
-            position: Position0x88::default(),
+            position: Position64::default(),
             options: EngineOptions {
                 debug: false,
                 options: HashMap::new(),
@@ -75,15 +75,15 @@ impl Engine {
                 InputMessage::Quit => {
                     break;
                 }
-                InputMessage::SetStartPosition => set_startpos(&mut self.position),
+                InputMessage::SetStartPosition => self.position = STARTPOS_FEN.parse().unwrap(),
                 InputMessage::SetPositionFromFen(fen) => {
-                    set_from_fen(&mut self.position, &fen).unwrap()
+                    self.position = fen.parse().unwrap();
                 }
                 InputMessage::MakeMoves(moves) => {
-                    let the_moves: Vec<LongAlgebraicNotationMove> = moves
+                    let the_moves: Vec<Move> = moves
                         .into_iter()
                         .map(|x| {
-                            let v: LongAlgebraicNotationMove = x.into();
+                            let v: Move = x.try_into().expect("invalid algebraic move");
                             v
                         })
                         .collect();

@@ -38,6 +38,18 @@ pub enum Castling {
     BlackQueenSide,
 }
 
+impl Castling {
+    pub fn from_index(index: usize) -> Castling {
+        match index {
+            0 => Castling::WhiteKingSide,
+            1 => Castling::WhiteQueenSide,
+            2 => Castling::BlackKingSide,
+            3 => Castling::BlackQueenSide,
+            _ => panic!("Invalid castling index"),
+        }
+    }
+}
+
 /// Trait for checking and setting castling rights on a position.
 pub trait HasCastlingRights {
     fn can_castle(&self, castling: Castling) -> bool;

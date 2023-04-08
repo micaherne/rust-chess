@@ -5,7 +5,7 @@ use chess_uci::messages::LongAlgebraicNotationMove;
 use crate::{
     bitboards::{rank, Bitboard, BitboardOps, SquareIndex64},
     fen::FenError,
-    position::{Castling, HasCastlingRights, Piece, SetPosition, Square, SquareIndex},
+    position::{Castling, HasCastlingRights, SetPosition, Square, SquareIndex},
     position64::{Colour, PieceType},
     zobrist::ZOBRIST_NUMBERS,
 };
@@ -92,6 +92,13 @@ pub trait GenerateMoves {
 pub trait MakeMove {
     fn make_move(&mut self, mv: Move) -> MoveUndo;
     fn undo_move(&mut self, mv: MoveUndo);
+    fn make_moves(&mut self, mvs: &[Move]) -> Vec<MoveUndo> {
+        let mut undo_moves = Vec::new();
+        for mv in mvs {
+            undo_moves.push(self.make_move(*mv));
+        }
+        undo_moves
+    }
 }
 
 pub trait CheckMoveOrUndo<T: HasToAndFromIndex> {
@@ -211,10 +218,6 @@ impl MakeMove for Position64 {
     fn make_move(&mut self, mv: Move) -> MoveUndo {
         let moved_piece = self.squares[mv.from_index as usize];
 
-        // TEMP!!!
-        if moved_piece.piece_type == PieceType::Empty {
-            println!("{:?} {:?} {:?}", mv, moved_piece, self);
-        }
         debug_assert!(moved_piece.piece_type != PieceType::Empty);
 
         #[cfg(debug_assertions)]
@@ -298,11 +301,11 @@ impl MakeMove for Position64 {
         }
 
         // Set ep square to zero before potentially setting it to a new value.
-        self.ep_square = 0;
+        self.set_ep_square(0);
 
         // Move creates ep square (i.e. pawn moves 2 squares)
         match self.ep_square(&mv) {
-            Some(ep_square) => self.ep_square = ep_square,
+            Some(ep_square) => self.set_ep_square(ep_square),
             None => {}
         }
 
@@ -326,6 +329,7 @@ impl MakeMove for Position64 {
 
         // Update side to move.
         self.side_to_move = self.side_to_move.opposite();
+        self.hash_key ^= ZOBRIST_NUMBERS.black_to_move;
 
         undo
     }
@@ -354,8 +358,10 @@ impl MakeMove for Position64 {
             self.set_square_to_piece(rook_from as SquareIndex64, rook);
         }
 
-        self.ep_square = mv.ep_square;
-        self.castling_rights = mv.castling_rights;
+        self.set_ep_square(mv.ep_square);
+        for (castling, value) in mv.castling_rights.0.iter().enumerate() {
+            self.set_castling(Castling::from_index(castling), *value);
+        }
         self.halfmove_clock = mv.halfmove_clock;
 
         if self.side_to_move == Colour::White {
@@ -412,11 +418,15 @@ mod test {
         let original_fen = "6k1/8/8/3pP3/8/8/8/6K1 w - d6 2 1";
         let mut position: Position64 = original_fen.parse().unwrap();
         assert_eq!(43, position.ep_square.to_single_square().unwrap());
+        assert_eq!(20100, position.material[Colour::White as usize]);
+        assert_eq!(20100, position.material[Colour::Black as usize]);
         let mv = Move::new(36, 43, None);
         let undo = position.make_move(mv);
+        assert_eq!(20000, position.material[Colour::Black as usize]);
         assert_eq!("6k1/8/3P4/8/8/8/8/6K1 b - - 0 1", position.to_string());
         position.undo_move(undo);
         assert_eq!(original_fen, position.to_string());
+        assert_eq!(20100, position.material[Colour::Black as usize]);
 
         let original_fen = "2b1kbnB/rppqp3/3p3p/3P1pp1/pnP3P1/PP2P2P/4QP2/RN2KBNR b KQ - 0 1";
         let mut position: Position64 = original_fen.parse().unwrap();

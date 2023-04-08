@@ -197,7 +197,7 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
     let pos: Position64 = Default::default();
     let mut perft = Perft::new(pos);
 
-    let diff = perft
+    perft
         .perft_compare(&fen.string, start_depth, &mut stockfish)
         .unwrap();
 

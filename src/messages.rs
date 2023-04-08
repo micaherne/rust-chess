@@ -1,7 +1,5 @@
 use chess_uci::messages::LongAlgebraicNotationMove;
 
-use crate::position0x88::{evaluate::Score, movegen::Move0x88};
-
 pub enum InputMessage {
     Quit,
     SetDebug(bool),

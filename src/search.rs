@@ -9,29 +9,24 @@ use chess_uci::messages::{
 };
 
 use crate::{
-    moves::GenerateMoves,
-    position::{Evaluate, MakeMoves},
-    position0x88::{
-        evaluate::{Score, CHECKMATE_SCORE_MAX},
-        movegen::Move0x88,
-        movegen_simple::side_to_move_in_check,
-        Position0x88, WHITE,
+    position64::{
+        evaluate::{Evaluate, Score, CHECKMATE_SCORE_MAX},
+        movegen_bb::MoveGenerator,
+        moves::{GenerateMoves, MakeMove, Move},
+        Colour, Position64,
     },
     transposition::{Hashable, NodeType, TranspositionItem, TranspositionTable},
 };
 
-#[cfg(debug_assertions)]
-use crate::position0x88::notation::to_fen;
-
 pub type Depth = i16;
 
-type Line = Vec<Move0x88>;
+type Line = Vec<Move>;
 
 const TRANSPOSITION_TABLE_SIZE: usize = 1_000_000;
 
 #[derive(Debug)]
 pub struct SearchTree {
-    position: Position0x88,
+    position: Position64,
     search_depth: Depth,
     transposition_table: TranspositionTable,
     pv: Line,
@@ -45,7 +40,7 @@ pub struct SearchTree {
 
 impl SearchTree {
     pub fn new(
-        position: Position0x88,
+        position: Position64,
         depth: Depth,
         time_allowed: usize,
         sender: Sender<OutputMessage>,
@@ -67,7 +62,7 @@ impl SearchTree {
 
     /// Create the search tree and start the thread to search it.
     pub fn start_search_thread(
-        position: Position0x88,
+        position: Position64,
         commands: &[GoSubcommand],
         output_sender: Sender<OutputMessage>,
         input_receiver: Receiver<InputMessage>,
@@ -95,11 +90,11 @@ impl SearchTree {
         });
     }
 
-    pub fn calculate_time_allowed(position: &Position0x88, commands: &[GoSubcommand]) -> usize {
+    pub fn calculate_time_allowed(position: &Position64, commands: &[GoSubcommand]) -> usize {
         let mut moves_to_go = 0;
         let mut time_left = 0;
         let mut increment = 0;
-        let wtm = position.get_side_to_move() == WHITE;
+        let wtm = position.get_side_to_move() == Colour::White;
 
         for command in commands {
             match command {
@@ -141,7 +136,7 @@ impl SearchTree {
     // TODO: This doesn't deal with sending the ponder move back to the engine - it would go direct to
     // the uci thread if we sent it here.
     pub fn search(&mut self) -> LongAlgebraicNotationMove {
-        let mut pline: Line = vec![Move0x88::default(); self.search_depth as usize];
+        let mut pline: Line = vec![Move::default(); self.search_depth as usize];
 
         self.nodes_searched = 0;
 
@@ -152,7 +147,8 @@ impl SearchTree {
             &mut pline,
         );
 
-        let pv_algebraic: Vec<LongAlgebraicNotationMove> = pline.iter().map(|m| m.into()).collect();
+        let pv_algebraic: Vec<LongAlgebraicNotationMove> =
+            pline.iter().map(|m| (*m).into()).collect();
 
         let alg_move = pv_algebraic[0].clone();
 
@@ -209,12 +205,12 @@ impl SearchTree {
             if from_tt_val.depth >= depthleft {
                 #[cfg(debug_assertions)]
                 {
-                    let to_fen = to_fen(&self.position);
+                    let to_fen = self.position.to_string();
                     if from_tt_val.fen != to_fen {
                         // Check it's not just the move number that's different.
                         let frm: Vec<&str> =
-                            from_tt_val.fen.split_ascii_whitespace().take(5).collect();
-                        let to: Vec<&str> = to_fen.split_ascii_whitespace().take(5).collect();
+                            from_tt_val.fen.split_ascii_whitespace().take(4).collect();
+                        let to: Vec<&str> = to_fen.split_ascii_whitespace().take(4).collect();
                         if frm.join(" ") != to.join(" ") {
                             println!("Hash collision: {} {}", from_tt_val.fen, to_fen);
                         }
@@ -247,17 +243,20 @@ impl SearchTree {
                 node_type: NodeType::PV,
                 created: SystemTime::now(),
                 #[cfg(debug_assertions)]
-                fen: to_fen(&self.position),
+                fen: self.position.to_string(),
             };
             self.transposition_table.store(tt_item);
             return eval;
         }
 
-        let moves = &self.position.generate_moves();
+        let mut move_gen = MoveGenerator::default();
+        move_gen.init(&self.position);
+
+        let moves = move_gen.generate_moves();
 
         // Test for checkmate / stalemate.
         if moves.len() == 0 {
-            if side_to_move_in_check(&self.position) {
+            if move_gen.is_check() {
                 // Bigger for closer mates.
                 return -(depthleft as Score + CHECKMATE_SCORE_MAX);
             } else {
@@ -266,9 +265,7 @@ impl SearchTree {
         }
 
         for mv in moves {
-            let undo = self
-                .position
-                .make_move(mv.from_index, mv.to_index, mv.queening_piece);
+            let undo = self.position.make_move(mv);
             let move_score = -self.search_ab(-beta, -alpha_local, depthleft - 1, &mut line);
 
             self.position.undo_move(undo);
@@ -282,7 +279,7 @@ impl SearchTree {
                     node_type: NodeType::Cut,
                     created: SystemTime::now(),
                     #[cfg(debug_assertions)]
-                    fen: to_fen(&self.position),
+                    fen: self.position.to_string(),
                 };
                 self.transposition_table.store(tt_item);
 
@@ -296,11 +293,11 @@ impl SearchTree {
 
                 // If alpha is raised, update the PV.
                 pline.clear();
-                pline.push(*mv);
+                pline.push(mv);
                 pline.extend(&line);
 
                 let pv_algebraic: Vec<LongAlgebraicNotationMove> =
-                    pline.iter().map(|m| m.into()).collect();
+                    pline.iter().map(|m| (*m).into()).collect();
 
                 // Send info output.
                 if depthleft == self.search_depth {
@@ -363,7 +360,7 @@ impl SearchTree {
             node_type: tt_node_type,
             created: SystemTime::now(),
             #[cfg(debug_assertions)]
-            fen: to_fen(&self.position),
+            fen: self.position.to_string(),
         };
         self.transposition_table.store(tt_item);
 
@@ -379,14 +376,14 @@ mod test {
 
     #[test]
     fn test_mate_in_one() {
-        let pos: Position0x88 = "4k3/8/8/1N5b/2q5/8/8/4K3 b - - 0 1".into();
+        let pos: Position64 = "4k3/8/8/1N5b/2q5/8/8/4K3 b - - 0 1".parse().unwrap();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         let tree = &mut SearchTree::new(pos, 1, 0, tx2, rx1);
         let mv = tree.search();
         assert_eq!("c4e2", mv.text);
 
-        let pos: Position0x88 = "8/7p/8/2p3P1/3k3P/8/p6r/3K4 b - - 0 52".into();
+        let pos: Position64 = "8/7p/8/2p3P1/3k3P/8/p6r/3K4 b - - 0 52".parse().unwrap();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         // Search to depth 5 to ensure it's not going for longer mates.
@@ -397,16 +394,14 @@ mod test {
 
     #[test]
     fn test_mate_in_two() {
-        let pos: Position0x88 =
-            "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0".into();
+        let pos: Position64 = "r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0"
+            .parse()
+            .unwrap();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         let tree = &mut SearchTree::new(pos, 3, 0, tx2, rx1);
         let mv = tree.search();
-        for (i, m) in [(0x43, 0x55), (0x66, 0x55), (0x32, 0x65)]
-            .iter()
-            .enumerate()
-        {
+        for (i, m) in [(35, 45), (54, 45), (26, 53)].iter().enumerate() {
             assert_eq!(m.0, tree.pv[i].from_index);
             assert_eq!(m.1, tree.pv[i].to_index);
         }
@@ -415,7 +410,9 @@ mod test {
 
     #[test]
     fn test_stupid_move() {
-        let pos: Position0x88 = "r2r1k2/ppp3pp/2p1p3/6P1/1b3B2/2N2P2/PP5P/2KRR3 b - - 0 20".into();
+        let pos: Position64 = "r2r1k2/ppp3pp/2p1p3/6P1/1b3B2/2N2P2/PP5P/2KRR3 b - - 0 20"
+            .parse()
+            .unwrap();
         let (_tx1, rx1) = mpsc::channel::<InputMessage>();
         let (tx2, _rx2) = mpsc::channel::<OutputMessage>();
         let tree = &mut SearchTree::new(pos, 5, 0, tx2, rx1);

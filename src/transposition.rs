@@ -3,9 +3,8 @@ use std::{collections::HashMap, time::SystemTime};
 use rand::RngCore;
 
 use crate::{
-    position0x88::{
-        evaluate::Score, movegen::Move0x88, movegen_simple::PIECE_TYPES_COUNT, BLACK, NONE, WHITE,
-    },
+    position::PIECE_COUNT,
+    position64::{evaluate::Score, moves::Move, Colour},
     search::Depth,
 };
 
@@ -16,7 +15,7 @@ pub trait Hashable {
 #[derive(Debug, Clone)]
 pub struct TranspositionItem {
     pub key: ZobristNumber,
-    pub best_move: Option<Move0x88>,
+    pub best_move: Option<Move>,
     pub depth: Depth,
     pub score: Score,
     pub node_type: NodeType,
@@ -89,7 +88,7 @@ pub enum NodeType {
 
 #[derive(Clone, Copy)]
 pub struct ZobristNumbers {
-    pub piece_square: [[ZobristPieceSquare; PIECE_TYPES_COUNT]; 3],
+    pub piece_square: [[ZobristPieceSquare; PIECE_COUNT]; 3],
     pub black_to_move: ZobristNumber,
     pub castling_rights: [ZobristNumber; 4],
     pub ep_file: [ZobristNumber; 8],
@@ -99,14 +98,14 @@ impl ZobristNumbers {
     pub fn init() -> ZobristNumbers {
         let mut rng = rand::thread_rng();
         let mut result = ZobristNumbers {
-            piece_square: [[[0; 64]; PIECE_TYPES_COUNT]; 3],
+            piece_square: [[[0; 64]; PIECE_COUNT]; 3],
             black_to_move: 0,
             castling_rights: [0; 4],
             ep_file: [0; 8],
         };
-        for piece in 1..PIECE_TYPES_COUNT {
+        for piece in 1..PIECE_COUNT {
             for square in 0..64 {
-                for colour in [BLACK, WHITE, NONE] {
+                for colour in [Colour::White, Colour::Black, Colour::None] {
                     result.piece_square[colour as usize][piece][square] = rng.next_u64();
                 }
             }
@@ -121,7 +120,8 @@ impl ZobristNumbers {
 
 #[cfg(test)]
 mod test {
-    use crate::{position::MakeMoves, position0x88::Position0x88};
+
+    use crate::position64::{moves::MakeMove, Position64};
 
     use super::*;
 
@@ -159,18 +159,35 @@ mod test {
 
     #[test]
     fn test_hash() {
-        let pos1: Position0x88 = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
-        let pos2: Position0x88 = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21".into();
+        let pos1: Position64 = "r4k2/pppR2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21"
+            .parse()
+            .unwrap();
+        let pos2: Position64 = "r4k2/pppr2pp/2pbp3/6P1/5B2/2N2P2/PP5P/2K1R3 w - - 0 21"
+            .parse()
+            .unwrap();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
-        let mut pos1: Position0x88 =
-            "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3".into();
-        let pos2: Position0x88 = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3".into();
+        let mut pos1: Position64 = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b KQkq - 0 3"
+            .parse()
+            .unwrap();
+        let pos2: Position64 = "rnbqkbnr/1ppppppp/8/8/p6P/8/PPPPPPP1/RNBQKBNR b Qkq - 0 3"
+            .parse()
+            .unwrap();
         assert_ne!(pos1.hash_key(), pos2.hash_key());
 
         let pre1 = pos1.hash_key();
-        let undo = pos1.make_move(7, 23, None);
+        let undo = pos1.make_move(Move::new(7, 23, None));
         pos1.undo_move(undo);
+        assert_eq!(pre1, pos1.hash_key());
+
+        let mut pos1: Position64 =
+            "r2qkb1r/pp2nppp/8/2pNp1B1/P1BnP3/3P3P/1PP2PP1/R2bK2R b KQkq a3 0 1"
+                .parse()
+                .unwrap();
+        let pre1 = pos1.hash_key();
+        let undo = pos1.make_move(Move::new(48, 40, None));
+        pos1.undo_move(undo);
+        println!("{}", pos1);
         assert_eq!(pre1, pos1.hash_key());
     }
 }

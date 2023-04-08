@@ -1,3 +1,4 @@
+pub mod evaluate;
 pub mod movegen_bb;
 pub mod moves;
 use std::{
@@ -95,6 +96,20 @@ impl AlgebraicNotation for PieceType {
             _ => Err(FenError::InvalidPiece(
                 algebraic_notation.chars().nth(0).unwrap(),
             )),
+        }
+    }
+}
+
+impl PieceType {
+    pub fn evaluation_value(&self) -> i32 {
+        match self {
+            PieceType::Pawn => 100,
+            PieceType::Knight => 320,
+            PieceType::Bishop => 330,
+            PieceType::Rook => 500,
+            PieceType::Queen => 900,
+            PieceType::King => 20000,
+            PieceType::Empty => 0,
         }
     }
 }
@@ -209,6 +224,9 @@ pub struct Position64 {
     // bitboards
     pub bb_pieces: [Bitboard; PIECE_COUNT],
     pub bb_colours: [Bitboard; 3],
+
+    // evaluation related (index 2 is meaningless, it just prevents branching)
+    pub material: [i32; 3],
 }
 
 impl Default for Position64 {
@@ -223,6 +241,7 @@ impl Default for Position64 {
             hash_key: Default::default(),
             bb_pieces: Default::default(),
             bb_colours: Default::default(),
+            material: Default::default(),
         }
     }
 }
@@ -245,6 +264,10 @@ impl SetPosition<SquareIndex64, PieceWithColour> for Position64 {
 
         // Set the piece on the square.
         self.squares[square as usize] = piece;
+
+        // Update the material.
+        self.material[current_piece.colour as usize] -= current_piece.piece_type.evaluation_value();
+        self.material[piece.colour as usize] += piece.piece_type.evaluation_value();
     }
 
     fn remove_from_square(&mut self, square: SquareIndex64) {
@@ -271,14 +294,17 @@ impl HasCastlingRights for Position64 {
 }
 
 impl Position64 {
-    pub fn set_ep_square(&mut self, square: Bitboard) {
-        debug_assert!(square.count_ones() == 1);
+    pub fn get_side_to_move(&self) -> Colour {
+        self.side_to_move
+    }
 
+    pub fn set_ep_square(&mut self, square: Bitboard) {
         // We can only use trailing_zeros() because it's a non-zero bitboard.
         if self.ep_square != 0 {
             self.hash_key ^= ZOBRIST_NUMBERS.ep_file
                 [file(self.ep_square.trailing_zeros() as SquareIndex64) as usize];
         }
+
         if square != 0 {
             self.hash_key ^=
                 ZOBRIST_NUMBERS.ep_file[file(square.trailing_zeros() as SquareIndex64) as usize];
@@ -455,6 +481,8 @@ mod test {
         assert_eq!(pos.ep_square, 0);
         assert_eq!(pos.halfmove_clock, 0);
         assert_eq!(pos.fullmove_number, 1);
+        assert_eq!(24000, pos.material[Colour::White as usize]);
+        assert_eq!(24000, pos.material[Colour::Black as usize]);
     }
 
     #[test]

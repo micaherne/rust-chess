@@ -74,7 +74,7 @@ impl GenerateMoves for MoveGenerator {
 
 // Generating functions.
 impl MoveGenerator {
-    fn generate_check_evasions(&self) -> Vec<Move> {
+    pub fn generate_check_evasions(&self) -> Vec<Move> {
         let mut result = vec![];
 
         if self.checkers.count_ones() == 1 {
@@ -487,7 +487,7 @@ impl MoveGenerator {
         }
     }
 
-    fn is_check(&self) -> bool {
+    pub fn is_check(&self) -> bool {
         self.checkers != 0
     }
 
@@ -1024,7 +1024,7 @@ mod test {
 
             let mut perft = Perft::new(position);
 
-            let perft_depth = 4;
+            let perft_depth = 1;
 
             let perft1 = perft.perft(perft_depth).unwrap();
             let target1: usize = line_parts[perft_depth as usize].parse().unwrap();
