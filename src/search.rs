@@ -69,7 +69,7 @@ impl SearchTree {
     ) {
         let search_time_allowed = SearchTree::calculate_time_allowed(&position, &commands);
 
-        let mut depth = 5;
+        let mut depth = 6;
 
         for cmd in commands {
             match cmd {
