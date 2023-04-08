@@ -54,7 +54,7 @@ impl TranspositionTable {
         key & self.key_mask
     }
 
-    pub fn probe(&self, key: ZobristNumber) -> Option<TranspositionItem> {
+    pub fn fetch(&self, key: ZobristNumber) -> Option<TranspositionItem> {
         let result = self.items.get(&self.index(key));
         if result.is_some() {
             let r = result.unwrap();
@@ -148,9 +148,9 @@ mod test {
         assert_eq!(1, tt1.items.len());
         assert_eq!(3, retrieved_item1.depth);
 
-        let probed1 = tt1.probe(5 * 128 + 71).unwrap();
+        let probed1 = tt1.fetch(5 * 128 + 71).unwrap();
         assert_eq!(5 * 128 + 71, probed1.key);
-        assert!(tt1.probe(71).is_none());
+        assert!(tt1.fetch(71).is_none());
 
         let tt2 = TranspositionTable::new(1_000_000);
         assert_eq!(1 << 20, tt2.actual_size);

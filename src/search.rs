@@ -171,23 +171,8 @@ impl SearchTree {
     ) -> Score {
         self.nodes_searched += 1;
 
-        if self.nodes_searched % 20000 == 0 {
-            let res = self._receiver.try_recv();
-            if res.is_ok() {
-                let message = res.unwrap();
-                match message {
-                    InputMessage::Stop(_) => {
-                        // TODO: This doesn't work any more. Get the PV / best move
-                        // and send it before exiting.
-                        self.timeout = true;
-                        return 0;
-                    }
-                    _ => {
-                        #[cfg(debug_assertions)]
-                        println!("Unexpected input message!");
-                    }
-                }
-            }
+        if let Some(value) = self.try_input() {
+            return value;
         }
 
         let mut line: Line = vec![];
@@ -199,53 +184,13 @@ impl SearchTree {
         // Node type to insert into transposition table.
         let mut tt_node_type = NodeType::All;
 
-        let from_tt = self.transposition_table.probe(self.position.hash_key());
-        if from_tt.is_some() {
-            let from_tt_val = from_tt.unwrap();
-            if from_tt_val.depth >= depthleft {
-                #[cfg(debug_assertions)]
-                {
-                    let to_fen = self.position.to_string();
-                    if from_tt_val.fen != to_fen {
-                        // Check it's not just the move number that's different.
-                        let frm: Vec<&str> =
-                            from_tt_val.fen.split_ascii_whitespace().take(4).collect();
-                        let to: Vec<&str> = to_fen.split_ascii_whitespace().take(4).collect();
-                        if frm.join(" ") != to.join(" ") {
-                            println!("Hash collision: {} {}", from_tt_val.fen, to_fen);
-                        }
-                    }
-                }
-
-                match from_tt_val.node_type {
-                    NodeType::PV => return from_tt_val.score,
-                    NodeType::All => {
-                        if from_tt_val.score <= alpha {
-                            return alpha;
-                        }
-                    }
-                    NodeType::Cut => {
-                        if from_tt_val.score > beta {
-                            return beta;
-                        }
-                    }
-                }
-            }
+        if let Some(value) = self.probe_tt(depthleft, alpha, beta) {
+            return value;
         }
 
         if depthleft == 0 {
             let eval = self.position.evaluate(); // self.quiesce(alpha_local, beta);
-            let tt_item = TranspositionItem {
-                key: self.position.hash_key(),
-                best_move: None,
-                depth: depthleft,
-                score: eval,
-                node_type: NodeType::PV,
-                created: SystemTime::now(),
-                #[cfg(debug_assertions)]
-                fen: self.position.to_string(),
-            };
-            self.transposition_table.store(tt_item);
+            self.store_tt(depthleft, eval, NodeType::PV);
             return eval;
         }
 
@@ -271,17 +216,7 @@ impl SearchTree {
             self.position.undo_move(undo);
 
             if move_score >= beta {
-                let tt_item = TranspositionItem {
-                    key: self.position.hash_key(),
-                    best_move: None,
-                    depth: depthleft,
-                    score: beta,
-                    node_type: NodeType::Cut,
-                    created: SystemTime::now(),
-                    #[cfg(debug_assertions)]
-                    fen: self.position.to_string(),
-                };
-                self.transposition_table.store(tt_item);
+                self.store_tt(depthleft, beta, NodeType::Cut);
 
                 return beta;
             }
@@ -296,75 +231,143 @@ impl SearchTree {
                 pline.push(mv);
                 pline.extend(&line);
 
-                let pv_algebraic: Vec<LongAlgebraicNotationMove> =
-                    pline.iter().map(|m| (*m).into()).collect();
-
                 // Send info output.
                 if depthleft == self.search_depth {
                     // Pull it into the search data.
                     self.pv = pline.iter().map(|m| m.to_owned()).collect();
 
-                    // Show the score from the engine's point of view.
-                    let score_for_me = match depthleft & 1 {
-                        0 => -move_score,
-                        1 => move_score,
-                        _ => {
-                            #[cfg(debug_assertions)]
-                            println!("Unexpected value for depth mod 2");
-                            0
-                        }
-                    };
-
-                    let score = InfoMessage::Score(vec![ScoreInfo::Centipawns(score_for_me)]);
-
-                    let nodes = InfoMessage::NodesSearched(self.nodes_searched);
-
-                    let mut info_messages =
-                        vec![InfoMessage::PrincipalVariation(pv_algebraic), score, nodes];
-
-                    let time_elapsed = self.search_start.elapsed();
-                    if let Ok(duration) = time_elapsed {
-                        let millis = duration.as_millis();
-
-                        // Bail out if we have no more time.
-                        if self.time_allowed != 0 && millis > (self.time_allowed as u128) {
-                            #[cfg(debug_assertions)]
-                            println!("Setting timeout!!!!!!!!");
-                            self.timeout = true;
-                            return 0;
-                        }
-
-                        info_messages.push(InfoMessage::TimeSearched(millis as usize));
-                        let secs = duration.as_secs();
-                        if secs > 0 {
-                            let nps = self.nodes_searched / secs as usize;
-                            info_messages.push(InfoMessage::NodesPerSecond(nps));
-                        }
-
-                        info_messages.push(InfoMessage::Depth(self.search_depth as usize));
+                    if let Some(value) = self.send_info(depthleft, move_score) {
+                        return value;
                     }
-
-                    // Send it to the output.
-                    self.sender
-                        .send(OutputMessage::Info(info_messages))
-                        .unwrap();
                 }
             }
         }
 
+        self.store_tt(depthleft, alpha_local, tt_node_type);
+
+        alpha_local
+    }
+
+    fn probe_tt(&mut self, depthleft: i16, alpha: i32, beta: i32) -> Option<i32> {
+        let from_tt = self.transposition_table.fetch(self.position.hash_key());
+        if from_tt.is_some() {
+            let from_tt_val = from_tt.unwrap();
+            if from_tt_val.depth >= depthleft {
+                #[cfg(debug_assertions)]
+                self.check_hash_collision(&from_tt_val);
+
+                match from_tt_val.node_type {
+                    NodeType::PV => return Some(from_tt_val.score),
+                    NodeType::All => {
+                        if from_tt_val.score <= alpha {
+                            return Some(alpha);
+                        }
+                    }
+                    NodeType::Cut => {
+                        if from_tt_val.score > beta {
+                            return Some(beta);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_hash_collision(&mut self, from_tt_val: &TranspositionItem) {
+        let to_fen = self.position.to_string();
+        if from_tt_val.fen != to_fen {
+            // Check it's not just the move number that's different.
+            let frm: Vec<&str> = from_tt_val.fen.split_ascii_whitespace().take(4).collect();
+            let to: Vec<&str> = to_fen.split_ascii_whitespace().take(4).collect();
+            if frm.join(" ") != to.join(" ") {
+                println!("Hash collision: {} {}", from_tt_val.fen, to_fen);
+            }
+        }
+    }
+
+    fn send_info(&mut self, depthleft: i16, move_score: i32) -> Option<i32> {
+        let score_for_me = match depthleft & 1 {
+            0 => -move_score,
+            1 => move_score,
+            _ => {
+                #[cfg(debug_assertions)]
+                println!("Unexpected value for depth mod 2");
+                0
+            }
+        };
+
+        let pv_algebraic: Vec<LongAlgebraicNotationMove> =
+            self.pv.iter().map(|m| (*m).into()).collect();
+
+        let score = InfoMessage::Score(vec![ScoreInfo::Centipawns(score_for_me)]);
+        let nodes = InfoMessage::NodesSearched(self.nodes_searched);
+        let mut info_messages = vec![InfoMessage::PrincipalVariation(pv_algebraic), score, nodes];
+        let time_elapsed = self.search_start.elapsed();
+        if let Ok(duration) = time_elapsed {
+            let millis = duration.as_millis();
+
+            // Bail out if we have no more time.
+            if self.time_allowed != 0 && millis > (self.time_allowed as u128) {
+                #[cfg(debug_assertions)]
+                println!("Setting timeout!!!!!!!!");
+                self.timeout = true;
+                return Some(0);
+            }
+
+            info_messages.push(InfoMessage::TimeSearched(millis as usize));
+            let secs = duration.as_secs();
+            if secs > 0 {
+                let nps = self.nodes_searched / secs as usize;
+                info_messages.push(InfoMessage::NodesPerSecond(nps));
+            }
+
+            info_messages.push(InfoMessage::Depth(self.search_depth as usize));
+        }
+        self.sender
+            .send(OutputMessage::Info(info_messages))
+            .unwrap();
+        // Show the score from the engine's point of view.
+
+        // Send it to the output.
+        None
+    }
+
+    fn store_tt(&mut self, depthleft: i16, score: i32, node_type: NodeType) {
         let tt_item = TranspositionItem {
             key: self.position.hash_key(),
             best_move: None,
             depth: depthleft,
-            score: alpha_local,
-            node_type: tt_node_type,
+            score,
+            node_type: node_type,
             created: SystemTime::now(),
             #[cfg(debug_assertions)]
             fen: self.position.to_string(),
         };
         self.transposition_table.store(tt_item);
+    }
 
-        alpha_local
+    fn try_input(&mut self) -> Option<i32> {
+        if self.nodes_searched % 20000 == 0 {
+            let res = self._receiver.try_recv();
+            if res.is_ok() {
+                let message = res.unwrap();
+                match message {
+                    InputMessage::Stop(_) => {
+                        // TODO: This doesn't work any more. Get the PV / best move
+                        // and send it before exiting.
+                        self.timeout = true;
+                        return Some(0);
+                    }
+                    _ => {
+                        #[cfg(debug_assertions)]
+                        println!("Unexpected input message!");
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
