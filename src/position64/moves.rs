@@ -411,6 +411,8 @@ impl TryFrom<LongAlgebraicNotationMove> for Move {
 
 #[cfg(test)]
 mod test {
+    use crate::fen::STARTPOS_FEN;
+
     use super::*;
 
     #[test]
@@ -438,6 +440,52 @@ mod test {
         );
         position.undo_move(undo);
         assert_eq!(original_fen, position.to_string());
+    }
+
+    #[test]
+    fn test_make_move() {
+        let fen = "r3kbnr/2qn2p1/8/pppBpp1P/3P1Pb1/P1P1P3/1P2Q2P/RNB1K1NR w KQkq - 0 1";
+        let mut position: Position64 = fen.parse().unwrap();
+        let mv = Move::new(35, 56, None);
+        position.make_move(mv);
+        assert_eq!(
+            CastlingRightsBool([true, true, true, false]),
+            position.castling_rights
+        );
+    }
+
+    #[test]
+    fn test_make_move2() {
+        let fen = "rn3b1r/1bqpp1k1/p7/2p2p1p/P2P4/2N1P1P1/1pK1NPP1/R3QB1R b - - 0 1";
+        let mut position: Position64 = fen.parse().unwrap();
+        let mv = Move::new(9, 0, None);
+        let undo = position.make_move(mv);
+        position.undo_move(undo);
+        assert_eq!(fen, position.to_string());
+    }
+
+    #[test]
+    fn test_undo_move() {
+        let mut position: Position64 = STARTPOS_FEN.parse().unwrap();
+        let moves: Vec<LongAlgebraicNotationMove> = [
+            "e2e4", "e7e5", "f2f4", "e5f4", "f1b5", "b8c6", "g1f3", "a7a6", "e1g1",
+        ]
+        .map(|x| LongAlgebraicNotationMove::from_text(x.to_string()).unwrap())
+        .into();
+        let moves2: Vec<Move> = moves
+            .iter()
+            .map(|x| Move::try_from(x.clone()).unwrap())
+            .collect();
+        let mut undo_stack = position.make_moves(&moves2);
+        loop {
+            let undo = undo_stack.pop();
+            if let None = undo {
+                break;
+            }
+            position.undo_move(undo.unwrap());
+        }
+
+        assert_eq!(STARTPOS_FEN, position.to_string());
     }
 
     #[test]

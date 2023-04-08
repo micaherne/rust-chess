@@ -1,7 +1,6 @@
 pub mod bitboards;
 pub mod engine;
 pub mod fen;
-pub mod moves;
 pub mod perft;
 pub mod position;
 pub mod position64;
@@ -12,7 +11,6 @@ pub mod zobrist;
 use std::{collections::VecDeque, env, sync::mpsc, thread};
 
 use perft::{run_divide, run_perft, run_perft_compare};
-// use uci::{UciInputListener, UciOutputListener};
 
 use crate::engine::Engine;
 
