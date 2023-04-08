@@ -527,6 +527,8 @@ mod test {
         assert_eq!(0x2800, PAWN_ATTACK_SQUARES[Colour::White as usize][4]);
 
         assert_eq!(0x3828, KING_ATTACK_SQUARES[4]);
+
+        assert_eq!(0, SLIDER_DIRECTION_SQUARE[6][59])
     }
 
     #[test]
@@ -539,5 +541,25 @@ mod test {
     fn test_lowest_set_bit() {
         assert_eq!(0, lowest_set_bit(1));
         assert_eq!(0, lowest_set_bit(Bitboard::MAX));
+    }
+
+    #[test]
+    fn test_iterate_attackers() {
+        let mut bb = Bitboard::MAX;
+        let mut i = 0;
+        while bb != 0 {
+            assert_eq!(i, lowest_set_bit(bb));
+            bb &= bb - 1;
+            i += 1;
+        }
+        assert_eq!(64, i);
+
+        let mut bb: Bitboard = 0x1000140000;
+        let mut i = 0;
+        while bb != 0 {
+            bb &= bb - 1;
+            i += 1;
+        }
+        assert_eq!(3, i);
     }
 }

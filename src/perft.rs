@@ -90,14 +90,18 @@ impl Perft {
         let mut moves: Vec<String> = vec![];
 
         for depth in (1..start_depth).rev() {
+            println!("Doing depth {}", depth);
             let diff_res = self.get_diff(connector, fen, depth, &mut moves);
             let mut biggest_diff_move: String = "".to_string();
-            let max_diff = 0;
+            let mut max_diff = 0;
 
             let diff = diff_res.unwrap();
 
+            println!("{:?}", diff);
+
             for (mv, counts) in diff.different_counts {
                 if counts.1.abs_diff(counts.0) > max_diff {
+                    max_diff = counts.1.abs_diff(counts.0);
                     biggest_diff_move = mv;
                 }
             }
@@ -127,6 +131,9 @@ impl Perft {
     ) -> Result<DivideDiff, FenError> {
         // Get perft at a certain depth.
         let their_perft = engine.get_perft(fen, moves, depth);
+
+        println!("Theirs: {:?}", their_perft);
+
         self.position = fen.parse()?;
 
         let long_alg_moves: Vec<LongAlgebraicNotationMove> = moves
@@ -145,6 +152,7 @@ impl Perft {
         println!("{}", f); */
 
         let our_perft = self.divide(depth as u16);
+        println!("Ours: {:?}", our_perft);
 
         let diff = diff_divides(&our_perft, &their_perft);
 
@@ -189,7 +197,7 @@ pub fn run_perft_compare(args: &mut VecDeque<String>) {
     let pos: Position64 = Default::default();
     let mut perft = Perft::new(pos);
 
-    perft
+    let diff = perft
         .perft_compare(&fen.string, start_depth, &mut stockfish)
         .unwrap();
 
@@ -236,6 +244,7 @@ pub struct DivideResults {
 #[derive(Debug, Default, Clone)]
 struct DivideDiff {
     missing_moves: Vec<String>,
+    extra_moves: Vec<String>,
     different_counts: HashMap<String, (usize, usize)>,
 }
 
@@ -331,6 +340,12 @@ fn diff_divides(ours: &DivideResults, theirs: &DivideResults) -> DivideDiff {
             if o != t {
                 result.different_counts.insert(mv, (t, o));
             }
+        }
+    }
+    for (m, _) in &ours.move_counts {
+        let mv = m.to_owned();
+        if !theirs.move_counts.contains_key(&mv) {
+            result.extra_moves.push(m.to_string());
         }
     }
     result

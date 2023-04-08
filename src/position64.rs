@@ -53,6 +53,20 @@ pub enum PieceType {
     King,
 }
 
+impl From<usize> for PieceType {
+    fn from(index: usize) -> Self {
+        match index {
+            1 => PieceType::Pawn,
+            2 => PieceType::Rook,
+            3 => PieceType::Knight,
+            4 => PieceType::Bishop,
+            5 => PieceType::Queen,
+            6 => PieceType::King,
+            _ => PieceType::Empty,
+        }
+    }
+}
+
 impl AlgebraicNotation for PieceType {
     fn to_algebraic_notation(&self) -> String {
         match self {
@@ -283,7 +297,7 @@ impl Debug for Position64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let sep = "+-".repeat(8) + "+\n";
         write!(f, "{}", &sep)?;
-        for i in (0..8).rev() {
+        for i in (0..8).rev().map(|x| x * 8) {
             write!(f, "|")?;
             for sq in &self.squares[i..i + 8] {
                 write!(f, "{}", sq.to_algebraic_notation())?;
@@ -400,7 +414,7 @@ impl Display for Position64 {
             write!(f, "{} ", ep_square_index.sq_to_algebraic_notation())?;
         }
 
-        writeln!(f, "{} {}", self.halfmove_clock, self.fullmove_number)?;
+        write!(f, "{} {}", self.halfmove_clock, self.fullmove_number)?;
         Ok(())
     }
 }

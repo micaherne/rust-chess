@@ -1,9 +1,11 @@
+use std::fmt::Display;
+
 use chess_uci::messages::LongAlgebraicNotationMove;
 
 use crate::{
     bitboards::{rank, Bitboard, BitboardOps, SquareIndex64},
     fen::FenError,
-    position::{Castling, HasCastlingRights, SetPosition, Square, SquareIndex},
+    position::{Castling, HasCastlingRights, Piece, SetPosition, Square, SquareIndex},
     position64::{Colour, PieceType},
     zobrist::ZOBRIST_NUMBERS,
 };
@@ -28,6 +30,21 @@ impl Move {
             to_index,
             queening_piece,
         }
+    }
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.from_index.sq_to_algebraic_notation(),
+            self.to_index.sq_to_algebraic_notation(),
+            match self.queening_piece {
+                Some(x) => x.to_algebraic_notation(),
+                _ => "".to_string(),
+            }
+        )
     }
 }
 
@@ -118,7 +135,7 @@ impl CheckMoveOrUndo<Move> for Position64 {
     fn ep_square(&self, mv: &Move) -> Option<Bitboard> {
         if self.is_en_passant(mv) {
             Some(Bitboard::from_single_square(
-                mv.to_index - (mv.to_index - mv.from_index) / 2,
+                (mv.to_index + mv.from_index) / 2,
             ))
         } else {
             None
@@ -175,9 +192,9 @@ impl CheckMoveOrUndo<MoveUndo> for Position64 {
     }
 
     fn capture_square(&self, mv: &MoveUndo) -> SquareIndex64 {
-        if self.ep_square != 0
+        if mv.ep_square != 0
             && mv.moved_piece.piece_type == PieceType::Pawn
-            && Bitboard::from_single_square(mv.to_index) == self.ep_square
+            && Bitboard::from_single_square(mv.to_index) == mv.ep_square
         {
             match self.side_to_move {
                 Colour::White => mv.to_index + 8,
@@ -193,6 +210,11 @@ impl CheckMoveOrUndo<MoveUndo> for Position64 {
 impl MakeMove for Position64 {
     fn make_move(&mut self, mv: Move) -> MoveUndo {
         let moved_piece = self.squares[mv.from_index as usize];
+
+        // TEMP!!!
+        if moved_piece.piece_type == PieceType::Empty {
+            println!("{:?} {:?} {:?}", mv, moved_piece, self);
+        }
         debug_assert!(moved_piece.piece_type != PieceType::Empty);
 
         #[cfg(debug_assertions)]
@@ -212,8 +234,6 @@ impl MakeMove for Position64 {
             fen,
         };
 
-        self.ep_square = 0;
-
         let new_piece = match mv.queening_piece {
             None => self.squares[mv.from_index as usize],
             Some(piece) => PieceWithColour {
@@ -221,15 +241,6 @@ impl MakeMove for Position64 {
                 colour: self.side_to_move,
             },
         };
-
-        self.remove_from_square(mv.from_index);
-        self.set_square_to_piece(mv.to_index, new_piece);
-
-        // Move creates ep square (i.e. pawn moves 2 squares)
-        match self.ep_square(&mv) {
-            Some(ep_square) => self.ep_square = ep_square,
-            None => {}
-        }
 
         // Move is a pawn capture to e.p. square.
         if self.is_en_passant_capture(&mv) {
@@ -242,7 +253,7 @@ impl MakeMove for Position64 {
                 6 => (Square::H1, Square::F1),  // G1
                 62 => (Square::H8, Square::F8), // G8
                 2 => (Square::A1, Square::D1),  // C1
-                57 => (Square::A8, Square::D8), // C8
+                58 => (Square::A8, Square::D8), // C8
                 _ => unreachable!(),
             };
 
@@ -286,6 +297,19 @@ impl MakeMove for Position64 {
             }
         }
 
+        // Set ep square to zero before potentially setting it to a new value.
+        self.ep_square = 0;
+
+        // Move creates ep square (i.e. pawn moves 2 squares)
+        match self.ep_square(&mv) {
+            Some(ep_square) => self.ep_square = ep_square,
+            None => {}
+        }
+
+        // We can move now as ep square is set (this uses position functions that check the pieces on the board).
+        self.remove_from_square(mv.from_index);
+        self.set_square_to_piece(mv.to_index, new_piece);
+
         // Update halfmove clock.
         if moved_piece.piece_type == PieceType::Pawn
             || captured_piece.piece_type != PieceType::Empty
@@ -299,6 +323,9 @@ impl MakeMove for Position64 {
         if self.side_to_move == Colour::Black {
             self.fullmove_number += 1;
         }
+
+        // Update side to move.
+        self.side_to_move = self.side_to_move.opposite();
 
         undo
     }
@@ -318,7 +345,7 @@ impl MakeMove for Position64 {
                 6 => (Square::H1, Square::F1),  // G1
                 62 => (Square::H8, Square::F8), // G8
                 2 => (Square::A1, Square::D1),  // C1
-                57 => (Square::A8, Square::D8), // C8
+                58 => (Square::A8, Square::D8), // C8
                 _ => unreachable!(),
             };
 
@@ -390,6 +417,30 @@ mod test {
         assert_eq!("6k1/8/3P4/8/8/8/8/6K1 b - - 0 1", position.to_string());
         position.undo_move(undo);
         assert_eq!(original_fen, position.to_string());
-        println!("{}", position);
+
+        let original_fen = "2b1kbnB/rppqp3/3p3p/3P1pp1/pnP3P1/PP2P2P/4QP2/RN2KBNR b KQ - 0 1";
+        let mut position: Position64 = original_fen.parse().unwrap();
+        let mv = Move::new(50, 34, None);
+        let undo = position.make_move(mv);
+        assert_eq!(
+            "2b1kbnB/rp1qp3/3p3p/2pP1pp1/pnP3P1/PP2P2P/4QP2/RN2KBNR w KQ c6 0 2",
+            position.to_string()
+        );
+        position.undo_move(undo);
+        assert_eq!(original_fen, position.to_string());
+    }
+
+    #[test]
+    fn test_castling() {
+        let original_fen = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1";
+        let mut position: Position64 = original_fen.parse().unwrap();
+        let mv = Move::new(4, 6, None);
+        let undo = position.make_move(mv);
+        assert_eq!(
+            "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R4RK1 b kq - 1 1",
+            position.to_string()
+        );
+        position.undo_move(undo);
+        assert_eq!(original_fen, position.to_string());
     }
 }
