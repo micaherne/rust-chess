@@ -10,7 +10,7 @@ use chess_uci::messages::{
 
 use crate::{
     position64::{
-        evaluate::{Evaluate, Score, CHECKMATE_SCORE_MAX},
+        evaluate::{Evaluate, Quiesce, Score, CHECKMATE_SCORE_MAX},
         movegen_bb::MoveGenerator,
         moves::{GenerateMoves, MakeMove, Move},
         Colour, Position64,
@@ -189,7 +189,7 @@ impl SearchTree {
         }
 
         if depthleft == 0 {
-            let eval = self.position.evaluate(); // self.quiesce(alpha_local, beta);
+            let eval = self.position.quiesce(alpha, beta); // evaluate();
             self.store_tt(depthleft, eval, NodeType::PV);
             return eval;
         }

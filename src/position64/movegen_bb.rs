@@ -210,7 +210,7 @@ impl MoveGenerator {
             & self.bb_colours[self.side_to_move as usize]
     }
 
-    fn generate_pawn_captures(&self) -> Vec<Move> {
+    pub fn generate_pawn_captures(&self) -> Vec<Move> {
         let mut result = vec![];
         let mut our_pawns =
             self.bb_colours[self.side_to_move as usize] & self.bb_pieces[PieceType::Pawn as usize];
@@ -596,6 +596,9 @@ impl MoveGenerator {
         for (colour, king_square) in self.king_squares.iter_mut().enumerate() {
             let king_bb =
                 position.bb_pieces[PieceType::King as usize] & position.bb_colours[colour];
+            if king_bb.count_ones() != 1 {
+                panic!("Invalid position: {} ", position.to_string());
+            }
             *king_square = king_bb.to_single_square().unwrap();
         }
     }
