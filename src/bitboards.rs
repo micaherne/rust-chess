@@ -484,7 +484,7 @@ pub const fn antidiagonal(square: SquareIndex64) -> LineIndex {
     rank(square) + file(square)
 }
 
-trait BitboardDisplay {
+pub trait BitboardDisplay {
     fn bitboard_to_string(&self) -> String;
 }
 

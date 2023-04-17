@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub const PIECE_COUNT: usize = 7;
+pub const SQUARE_COUNT: usize = 64;
 
 /// A number representing a rank or a file.
 pub type RankOrFileIndex = u8;

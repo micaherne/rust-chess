@@ -1,6 +1,7 @@
 pub mod bitboards;
 pub mod engine;
 pub mod fen;
+pub mod magic;
 pub mod perft;
 pub mod position;
 pub mod position64;
