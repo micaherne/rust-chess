@@ -3,6 +3,7 @@ use std::vec;
 use crate::{
     bitboards::*,
     iterate_squares,
+    magic::SQUARE_MAGICS,
     position::{Castling, SetPosition, PIECE_COUNT},
     position64::PieceType,
 };
@@ -340,65 +341,27 @@ impl MoveGenerator {
         piece_type: PieceType,
         from_square: SquareIndex64,
     ) -> Bitboard {
-        let mut moves = 0;
+        let mut moves;
         let blockers =
             self.bb_colours[Colour::White as usize] | self.bb_colours[Colour::Black as usize];
         let pin_mask = self.pin_masks[from_square as usize];
-        let attack_squares = match piece_type {
-            PieceType::Queen => QUEEN_ATTACK_SQUARES[from_square as usize],
-            PieceType::Rook => ROOK_ATTACK_SQUARES[from_square as usize],
-            PieceType::Bishop => BISHOP_ATTACK_SQUARES[from_square as usize],
-            _ => panic!("Invalid piece type"),
-        };
-        let attack_squares_mask = attack_squares & pin_mask;
 
-        if attack_squares_mask == 0 {
-            return 0;
+        match piece_type {
+            PieceType::Rook => {
+                moves = SQUARE_MAGICS[from_square as usize].rook_attacks(blockers) & pin_mask
+            }
+            PieceType::Bishop => {
+                moves = SQUARE_MAGICS[from_square as usize].bishop_attacks(blockers) & pin_mask
+            }
+            PieceType::Queen => {
+                moves = (SQUARE_MAGICS[from_square as usize].rook_attacks(blockers)
+                    | SQUARE_MAGICS[from_square as usize].bishop_attacks(blockers))
+                    & pin_mask
+            }
+            _ => panic!("Not a slider"),
         }
 
-        let directions = match piece_type {
-            PieceType::Queen => 0..8,
-            PieceType::Rook => 0..4,
-            PieceType::Bishop => 4..8,
-            _ => panic!("Invalid piece type"),
-        };
-
-        for dir_index in directions {
-            let dir = DIR_ALL_SLIDERS[dir_index];
-            let potential_moves: Bitboard =
-                SLIDER_DIRECTION_SQUARE[dir_index][from_square as usize] & pin_mask;
-
-            if potential_moves == 0 {
-                continue;
-            }
-
-            let mut square = square_mask64(from_square);
-            while square != 0 {
-                if dir > 0 {
-                    square <<= dir;
-                } else {
-                    square >>= -dir;
-                }
-
-                if square & potential_moves == 0 {
-                    break;
-                }
-
-                if square & pin_mask == 0 {
-                    break;
-                }
-
-                if square & blockers == 0 {
-                    moves |= square;
-                } else {
-                    if square & self.bb_colours[self.side_to_move as usize] != 0 {
-                        break;
-                    }
-                    moves |= square;
-                    break;
-                }
-            }
-        }
+        moves &= !(self.bb_colours[self.side_to_move as usize]);
 
         moves
     }

@@ -3,7 +3,7 @@ use crate::{
         Bitboard, SixtyFourBitboards, SquareIndex64, BETWEEN, DIR_ALL_SLIDERS, FILE_MASK,
         RANK_MASK, SLIDER_DIRECTION_SQUARE,
     },
-    position::{Square, SQUARE_COUNT},
+    position::SQUARE_COUNT,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -148,7 +148,7 @@ const BISHOP_MAGICS: SixtyFourBitboards = [
     0x40420094048181,
 ];
 
-struct SquareMagics {
+pub struct SquareMagics {
     rook_magic: MagicEntry,
     bishop_magic: MagicEntry,
     rook_attacks: [Bitboard; 4096],
@@ -248,7 +248,7 @@ const MAGICS_F8: SquareMagics = SquareMagics::generate(61);
 const MAGICS_G8: SquareMagics = SquareMagics::generate(62);
 const MAGICS_H8: SquareMagics = SquareMagics::generate(63);
 
-const SQUARE_MAGICS: [SquareMagics; 64] = [
+pub const SQUARE_MAGICS: [SquareMagics; 64] = [
     MAGICS_A1, MAGICS_B1, MAGICS_C1, MAGICS_D1, MAGICS_E1, MAGICS_F1, MAGICS_G1, MAGICS_H1,
     MAGICS_A2, MAGICS_B2, MAGICS_C2, MAGICS_D2, MAGICS_E2, MAGICS_F2, MAGICS_G2, MAGICS_H2,
     MAGICS_A3, MAGICS_B3, MAGICS_C3, MAGICS_D3, MAGICS_E3, MAGICS_F3, MAGICS_G3, MAGICS_H3,
@@ -259,45 +259,7 @@ const SQUARE_MAGICS: [SquareMagics; 64] = [
     MAGICS_A8, MAGICS_B8, MAGICS_C8, MAGICS_D8, MAGICS_E8, MAGICS_F8, MAGICS_G8, MAGICS_H8,
 ];
 
-struct Magics {
-    rook_magic: [MagicEntry; 64],
-    bishop_magic: [MagicEntry; 64],
-    rook_attacks: [[Bitboard; 4096]; 64],
-    bishop_attacks: [[Bitboard; 512]; 64],
-}
-
-impl Magics {
-    pub fn rook_attacks(&self, square: SquareIndex64, blockers: u64) -> u64 {
-        let magic_entry = self.rook_magic[square as usize];
-        let blockers_masked = blockers & magic_entry.mask;
-        let index =
-            ((blockers_masked.wrapping_mul(magic_entry.magic)) >> magic_entry.offset) as usize;
-        self.rook_attacks[square as usize][index]
-    }
-}
-
 const BLOCKER_MASKS: [SixtyFourBitboards; 2] = generate_blocker_masks();
-
-const fn generate_rook_attacks(square: SquareIndex64) -> [Bitboard; 4096] {
-    let mut attacks = [0; 4096];
-    let magic = ROOK_MAGICS[square as usize];
-    let mask = BLOCKER_MASKS[MagicType::Rook as usize][square as usize];
-    let offset = 64 - mask.count_ones() as usize;
-    let mut mask_subset = 0u64;
-    loop {
-        let index = ((mask_subset.wrapping_mul(magic)) >> offset) as usize;
-        let attack_moves = moves(square as SquareIndex64, mask_subset, MagicType::Rook);
-        if attacks[index] != 0 && attacks[index] != attack_moves {
-            panic!("Index collision!");
-        }
-        attacks[index] = attack_moves;
-        mask_subset = (mask_subset.wrapping_sub(mask)) & mask;
-        if mask_subset == 0 {
-            break;
-        }
-    }
-    attacks
-}
 
 const fn generate_bishop_magic(square: SquareIndex64) -> (MagicEntry, [Bitboard; 512]) {
     let mask = BLOCKER_MASKS[MagicType::Bishop as usize][square as usize];
@@ -419,6 +381,7 @@ pub const fn next_u64(seed: u128) -> u64 {
     xsl.rotate_right(rot)
 }
 
+#[cfg(test)]
 mod test {
 
     use crate::bitboards::BitboardDisplay;
@@ -491,7 +454,7 @@ mod test {
             let offset = 64 - attacks_size.ilog2();
 
             let mut attacks;
-            let mut magic = 0;
+            let mut magic;
             let mut rnd: u128 = 0xE926E6210D9E3486 | 1;
             'magic: loop {
                 rnd = next_seed(rnd);

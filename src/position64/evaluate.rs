@@ -1,11 +1,11 @@
 use std::fmt::Display;
 
-use crate::{bitboards::PIECE_ATTACK_SQUARES, iterate_squares, position::PIECE_COUNT};
+use crate::{bitboards::PIECE_ATTACK_SQUARES, position::PIECE_COUNT};
 
 use super::{
     movegen_bb::MoveGenerator,
     moves::{MakeMove, Move},
-    Colour, PieceType, Position64,
+    Position64,
 };
 
 pub type Score = i32;
@@ -163,6 +163,8 @@ impl Display for PieceSquareTable {
 
 #[cfg(test)]
 mod test {
+
+    use crate::position64::PieceType;
 
     use super::*;
 

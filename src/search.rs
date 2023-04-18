@@ -10,7 +10,7 @@ use chess_uci::messages::{
 
 use crate::{
     position64::{
-        evaluate::{Evaluate, Quiesce, Score, CHECKMATE_SCORE_MAX},
+        evaluate::{Quiesce, Score, CHECKMATE_SCORE_MAX},
         movegen_bb::MoveGenerator,
         moves::{GenerateMoves, MakeMove, Move},
         Colour, Position64,
